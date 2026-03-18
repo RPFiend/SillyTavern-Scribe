@@ -90,11 +90,15 @@ async function sendWithProfile(profileId, prompt) {
         
         console.log('SillyTavern-Scribe!: Using profile:', profile.name);
         
+        // ConnectionManagerRequestService expects messages as an array of {role, content} objects
+        const messages = [{ role: 'user', content: prompt }];
+        
         // Send request using ConnectionManagerRequestService
+        // Signature: sendRequest(profileId, messages, maxResponseToken)
         const result = await context.ConnectionManagerRequestService.sendRequest(
             profileId,
-            prompt,
-            false  // ignoreInstruct parameter
+            messages,
+            1024  // maxResponseToken - reasonable for JSON lore entries
         );
         
         if (result?.response) {
