@@ -1,11 +1,12 @@
-import { extension_settings, saveSettingsDebounced } from '../../../extensions.js';
-import { eventSource, event_types } from '../../../../script.js';
+import { extension_settings } from '../../../extensions.js';
+import { eventSource, event_types, getContext } from '../../../../script.js';
 import {
     world_names,
     loadWorldInfo,
     createWorldInfoEntry,
     saveWorldInfo,
-    reloadEditor
+    reloadEditor,
+    world_info
 } from '../../../world-info.js';
 
 /**
@@ -49,7 +50,7 @@ function onTextSelected() {
  * @returns {Promise<string>} - The LLM response
  */
 async function generateLoreEntry(selectedText, messageContext) {
-    const context = SillyTavern.getContext();
+    const context = getContext();
     const response = await context.generateQuietPrompt({
         prompt: `You are a lore assistant. Based on the text below, write a lorebook entry for the entity or concept described.
 Return ONLY valid JSON in this exact format, no other text:
