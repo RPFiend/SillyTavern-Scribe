@@ -6,6 +6,7 @@ const defaultSettings = {
 
 import { extension_settings } from '../../../extensions.js';
 import { eventSource, event_types, saveSettingsDebounced } from '../../../../script.js';
+import { ConnectionManagerRequestService } from '../../../../shared.js';
 import {
     world_names,
     loadWorldInfo,
@@ -14,24 +15,6 @@ import {
     reloadEditor,
     world_info
 } from '../../../world-info.js';
-
-/**
- * Gets the list of available connection profiles
- * @returns {Promise<Array>} - Array of profile objects with id and name
- */
-async function getAvailableProfiles() {
-    console.log('SillyTavern-Scribe!: Getting available profiles...');
-    
-    try {
-        const context = SillyTavern.getContext();
-        const profiles = context.extensionSettings?.connectionManager?.profiles ?? [];
-        console.log('SillyTavern-Scribe!: Found profiles:', profiles.length);
-        return profiles.map(p => ({ id: p.id, name: p.name }));
-    } catch (e) {
-        console.error('SillyTavern-Scribe!: Failed to get profiles:', e);
-        return [];
-    }
-}
 
 /**
  * Shows the floating extract button near the text selection
@@ -79,27 +62,8 @@ async function sendWithProfile(profileId, prompt) {
     console.log('SillyTavern-Scribe!: Attempting to send with profile:', profileId);
     
     try {
-        const context = SillyTavern.getContext();
-        
-        // Verify profile exists
-        const profile = context.extensionSettings?.connectionManager?.profiles?.find(p => p.id === profileId);
-        if (!profile) {
-            console.warn('SillyTavern-Scribe!: Profile not found:', profileId);
-            return null;
-        }
-        
-        console.log('SillyTavern-Scribe!: Using profile:', profile.name);
-        
-        // ConnectionManagerRequestService expects messages as an array of {role, content} objects
-        const messages = [{ role: 'user', content: prompt }];
-        
-        // Send request using ConnectionManagerRequestService
-        // Signature: sendRequest(profileId, messages, maxResponseToken)
-        const result = await context.ConnectionManagerRequestService.sendRequest(
-            profileId,
-            messages,
-            1024  // maxResponseToken - reasonable for JSON lore entries
-        );
+        const service = new ConnectionManagerRequestService();
+        const result = await service.sendRequest(profileId, prompt, 1024);
         
         if (result?.response) {
             console.log('SillyTavern-Scribe!: Success via ConnectionManagerRequestService');
@@ -392,13 +356,6 @@ async function injectSettingsPanel() {
         ? world_names.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('')
         : '';
 
-    // Get available connection profiles
-    const profiles = await getAvailableProfiles();
-    const savedProfile = extension_settings['SillyTavern-Scribe']?.selectedProfile || '';
-    const profileOptions = profiles.length > 0
-        ? profiles.map(p => `<option value="${escapeHtml(p.id)}"${p.id === savedProfile ? ' selected' : ''}>${escapeHtml(p.name)}</option>`).join('')
-        : '<option value="">(No profiles available)</option>';
-
     const html = `
     <div id="scribe_settings" class="extension_settings">
       <div class="inline-drawer">
@@ -409,10 +366,7 @@ async function injectSettingsPanel() {
         <div class="inline-drawer-content" style="display:none;">
           <div class="flex-container flexFlowColumn">
             <label for="scribe-profile-select">Connection Profile</label>
-            <select id="scribe-profile-select" class="text_pole">
-              <option value="">Use Default (Chat)</option>
-              ${profileOptions}
-            </select>
+            <select id="scribe-profile-select" class="text_pole"></select>
             <small style="opacity:0.6; font-size:11px; margin-top:4px;">
               Select a profile for cheaper/faster lore generation.
             </small>
@@ -432,6 +386,23 @@ async function injectSettingsPanel() {
 
     $('#extensions_settings').append(html);
 
+    // Set up connection profile dropdown using handleDropdown
+    const service = new ConnectionManagerRequestService();
+    const profileSelect = document.getElementById('scribe-profile-select');
+    const savedProfile = extension_settings['SillyTavern-Scribe']?.selectedProfile || '';
+    service.handleDropdown(profileSelect, (selectedId) => {
+        if (!extension_settings['SillyTavern-Scribe']) {
+            extension_settings['SillyTavern-Scribe'] = {};
+        }
+        extension_settings['SillyTavern-Scribe'].selectedProfile = selectedId;
+        saveSettingsDebounced();
+        console.log('SillyTavern-Scribe!: Profile selected:', selectedId);
+    });
+    // Restore previously saved selection
+    if (savedProfile) {
+        profileSelect.value = savedProfile;
+    }
+
     // Set the saved lorebook as selected
     const savedLorebook = extension_settings['SillyTavern-Scribe']?.selectedLorebook;
     if (savedLorebook) {
@@ -445,16 +416,6 @@ async function injectSettingsPanel() {
         }
         extension_settings['SillyTavern-Scribe'].selectedLorebook = $(this).val();
         saveSettingsDebounced();
-    });
-
-    // Save profile on change
-    $('#scribe-profile-select').on('change', function() {
-        if (!extension_settings['SillyTavern-Scribe']) {
-            extension_settings['SillyTavern-Scribe'] = {};
-        }
-        extension_settings['SillyTavern-Scribe'].selectedProfile = $(this).val();
-        saveSettingsDebounced();
-        console.log('SillyTavern-Scribe!: Profile selected:', $(this).val());
     });
 }
 
