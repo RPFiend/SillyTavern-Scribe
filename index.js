@@ -309,32 +309,40 @@ async function saveLoreEntry(lorebookName, title, keywords, content) {
  * Injects the extension settings panel into SillyTavern's settings UI
  */
 function injectSettingsPanel() {
-    const settingsHtml = `
-        <div class="inline-drawer">
-            <div class="inline-drawer-toggle notalone">
-                <span>Scribe</span>
-            </div>
-            <div class="inline-drawer-content">
-                <div class="flex-container">
-                    <select id="scribe-lorebook-select" class="text_pole">
-                        ${world_names && world_names.length > 0 
-                            ? world_names.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('')
-                            : '<option value="">(No lorebooks found)</option>'
-                        }
-                    </select>
-                </div>
-            </div>
+    const options = world_names && world_names.length > 0
+        ? world_names.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('')
+        : '';
+
+    const html = `
+    <div id="scribe_settings" class="extension_settings">
+      <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+          <b>Scribe</b>
+          <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
         </div>
-    `;
-    
-    $('#extensions_settings').append(settingsHtml);
-    
+        <div class="inline-drawer-content" style="display:none;">
+          <div class="flex-container flexFlowColumn">
+            <label for="scribe-lorebook-select">Default Lorebook</label>
+            <select id="scribe-lorebook-select" class="text_pole">
+              <option value="">(Select a lorebook)</option>
+              ${options}
+            </select>
+            <small style="opacity:0.6; font-size:11px; margin-top:4px;">
+              Highlight text in any chat message, then click "📖 Extract Lore".
+            </small>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+    $('#extensions_settings').append(html);
+
     // Set the saved lorebook as selected
     const savedLorebook = extension_settings['SillyTavern-Scribe']?.selectedLorebook;
     if (savedLorebook) {
         $('#scribe-lorebook-select').val(savedLorebook);
     }
-    
+
     // Save on change
     $('#scribe-lorebook-select').on('change', function() {
         if (!extension_settings['SillyTavern-Scribe']) {
