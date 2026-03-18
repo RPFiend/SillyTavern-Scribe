@@ -1,7 +1,11 @@
 // Default settings for this extension
 const defaultSettings = {
     selectedLorebook: '',
-    selectedProfile: ''
+    selectedProfile: '',
+    contextMessages: 5,
+    includeCharCard: true,
+    includeAuthorNote: false,
+    includeLorebook: false,
 };
 
 import { extension_settings } from '../../../extensions.js';
@@ -79,6 +83,76 @@ async function sendWithProfile(profileId, prompt) {
 }
 
 /**
+ * Assembles additional context from ST based on saved settings
+ * @returns {Promise<string>} - Formatted context string
+ */
+async function buildContextSections() {
+    const ctx = SillyTavern.getContext();
+    const settings = extension_settings['SillyTavern-Scribe'] ?? {};
+    const sections = [];
+
+    // Recent chat messages
+    const messageCount = settings.contextMessages ?? 5;
+    if (messageCount > 0 && ctx.chat?.length > 0) {
+        const recent = ctx.chat
+            .filter(m => !m.is_system)
+            .slice(-messageCount)
+            .map(m => `${m.name}: ${m.mes}`)
+            .join('\n');
+        if (recent) {
+            sections.push(`--- Recent Chat (last ${messageCount} messages) ---\n${recent}`);
+        }
+    }
+
+    // Character card
+    if (settings.includeCharCard) {
+        const char = ctx.characters?.[ctx.characterId];
+        if (char) {
+            const parts = [];
+            if (char.name)        parts.push(`Name: ${char.name}`);
+            if (char.description) parts.push(`Description: ${char.description}`);
+            if (char.personality) parts.push(`Personality: ${char.personality}`);
+            if (char.scenario)    parts.push(`Scenario: ${char.scenario}`);
+            if (parts.length) {
+                sections.push(`--- Character Card ---\n${parts.join('\n')}`);
+            }
+        }
+    }
+
+    // Author's note
+    if (settings.includeAuthorNote) {
+        const note = ctx.chatMetadata?.note_prompt?.trim();
+        if (note) {
+            sections.push(`--- Author's Note ---\n${note}`);
+        }
+    }
+
+    // Active lorebook
+    if (settings.includeLorebook) {
+        const char = ctx.characters?.[ctx.characterId];
+        const worldName = char?.extensions?.world;
+        if (worldName) {
+            try {
+                const book = await loadWorldInfo(worldName);
+                if (book?.entries) {
+                    const entries = Object.values(book.entries)
+                        .filter(e => !e.disable && e.content)
+                        .map(e => `[${e.comment || 'Entry'}]: ${e.content}`)
+                        .join('\n');
+                    if (entries) {
+                        sections.push(`--- Active Lorebook (${worldName}) ---\n${entries}`);
+                    }
+                }
+            } catch (e) {
+                console.warn('SillyTavern-Scribe!: Failed to load lorebook for context:', e);
+            }
+        }
+    }
+
+    return sections.join('\n\n');
+}
+
+/**
  * Generates a lorebook entry using the LLM
  * @param {string} selectedText - The text selected by the user
  * @param {string} messageContext - The surrounding message context
@@ -91,7 +165,9 @@ async function generateLoreEntry(selectedText, messageContext, revisionInstructi
     console.log('SillyTavern-Scribe!: Selected text:', selectedText);
     console.log('SillyTavern-Scribe!: Message context:', messageContext);
     console.log('SillyTavern-Scribe!: Using profile:', selectedProfile || 'Default (Chat)');
-    
+
+    const additionalContext = await buildContextSections();
+
     const prompt = `You are a lore assistant. Based on the text below, write a lorebook entry for the entity or concept described.
 Return ONLY valid JSON in this exact format, no other text:
 {
@@ -99,7 +175,7 @@ Return ONLY valid JSON in this exact format, no other text:
   "keywords": ["keyword1", "keyword2", "keyword3"],
   "content": "Third-person lore description of the entity."
 }
-
+${additionalContext ? `\n${additionalContext}\n` : ''}
 Selected text: ${selectedText}
 Message context: ${messageContext}${revisionInstructions ? `\nRevision instructions: ${revisionInstructions}` : ''}`;
 
@@ -427,6 +503,31 @@ async function injectSettingsPanel() {
             <small style="opacity:0.6; font-size:11px; margin-top:4px;">
               Highlight text in any chat message, then click "📖 Extract Lore".
             </small>
+
+            <hr style="opacity:0.2; margin:12px 0;">
+
+            <label for="scribe-context-messages">Recent Chat Messages: <span id="scribe-context-messages-value">5</span></label>
+            <input type="range" id="scribe-context-messages" class="text_pole"
+                min="0" max="20" step="1" value="5"
+                style="width:100%; margin-top:4px;">
+            <small style="opacity:0.6; font-size:11px;">
+              How many recent chat messages to include as context (0 = none).
+            </small>
+
+            <div style="margin-top:10px; display:flex; flex-direction:column; gap:6px;">
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                <input type="checkbox" id="scribe-include-charcard">
+                Include Character Card
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                <input type="checkbox" id="scribe-include-authornote">
+                Include Author's Note
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                <input type="checkbox" id="scribe-include-lorebook">
+                Include Active Lorebook
+              </label>
+            </div>
           </div>
         </div>
       </div>
@@ -461,6 +562,53 @@ async function injectSettingsPanel() {
             extension_settings['SillyTavern-Scribe'] = {};
         }
         extension_settings['SillyTavern-Scribe'].selectedLorebook = $(this).val();
+        saveSettingsDebounced();
+    });
+
+    // Restore saved values for new controls
+    const savedMsgCount = extension_settings['SillyTavern-Scribe']?.contextMessages ?? 5;
+    $('#scribe-context-messages').val(savedMsgCount);
+    $('#scribe-context-messages-value').text(savedMsgCount);
+    $('#scribe-include-charcard').prop('checked',
+        extension_settings['SillyTavern-Scribe']?.includeCharCard ?? true);
+    $('#scribe-include-authornote').prop('checked',
+        extension_settings['SillyTavern-Scribe']?.includeAuthorNote ?? false);
+    $('#scribe-include-lorebook').prop('checked',
+        extension_settings['SillyTavern-Scribe']?.includeLorebook ?? false);
+
+    // Save on change — messages slider
+    $('#scribe-context-messages').on('input', function() {
+        const val = parseInt($(this).val());
+        $('#scribe-context-messages-value').text(val);
+        if (!extension_settings['SillyTavern-Scribe']) {
+            extension_settings['SillyTavern-Scribe'] = {};
+        }
+        extension_settings['SillyTavern-Scribe'].contextMessages = val;
+        saveSettingsDebounced();
+    });
+
+    // Save on change — checkboxes
+    $('#scribe-include-charcard').on('change', function() {
+        if (!extension_settings['SillyTavern-Scribe']) {
+            extension_settings['SillyTavern-Scribe'] = {};
+        }
+        extension_settings['SillyTavern-Scribe'].includeCharCard = $(this).prop('checked');
+        saveSettingsDebounced();
+    });
+
+    $('#scribe-include-authornote').on('change', function() {
+        if (!extension_settings['SillyTavern-Scribe']) {
+            extension_settings['SillyTavern-Scribe'] = {};
+        }
+        extension_settings['SillyTavern-Scribe'].includeAuthorNote = $(this).prop('checked');
+        saveSettingsDebounced();
+    });
+
+    $('#scribe-include-lorebook').on('change', function() {
+        if (!extension_settings['SillyTavern-Scribe']) {
+            extension_settings['SillyTavern-Scribe'] = {};
+        }
+        extension_settings['SillyTavern-Scribe'].includeLorebook = $(this).prop('checked');
         saveSettingsDebounced();
     });
 }
