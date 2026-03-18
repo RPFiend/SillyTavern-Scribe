@@ -16,6 +16,8 @@ function onTextSelected() {
     const selection = window.getSelection();
     const selectionText = selection.toString().trim();
     
+    console.log('SillyTavern-Scribe!: Text selection detected');
+    
     if (selectionText && selection.rangeCount > 0) {
         const range = selection.getRangeAt(0);
         const container = range.commonAncestorContainer;
@@ -50,6 +52,10 @@ function onTextSelected() {
  * @returns {Promise<string>} - The LLM response
  */
 async function generateLoreEntry(selectedText, messageContext) {
+    console.log('SillyTavern-Scribe!: Sending request to LLM');
+    console.log('SillyTavern-Scribe!: Selected text:', selectedText);
+    console.log('SillyTavern-Scribe!: Message context:', messageContext);
+    
     const context = SillyTavern.getContext();
     const response = await context.generateQuietPrompt({
         prompt: `You are a lore assistant. Based on the text below, write a lorebook entry for the entity or concept described.
@@ -64,6 +70,7 @@ Selected text: ${selectedText}
 Message context: ${messageContext}`
     });
     
+    console.log('SillyTavern-Scribe!: LLM response received:', response);
     return response;
 }
 
@@ -92,7 +99,7 @@ function parseLoreResponse(response) {
         
         return null;
     } catch (e) {
-        console.error('Lore Extractor: Failed to parse LLM response', e);
+        console.error('SillyTavern-Scribe!: Failed to parse LLM response', e);
         return null;
     }
 }
@@ -103,6 +110,8 @@ function parseLoreResponse(response) {
  * @param {string} messageContext - The original message context
  */
 function showReviewModal(draft, messageContext) {
+    console.log('SillyTavern-Scribe!: Showing review modal with draft:', draft);
+    
     // Remove existing modal if any
     const existingModal = document.querySelector('.le-modal-overlay');
     if (existingModal) {
@@ -273,13 +282,15 @@ async function saveLoreEntry(lorebookName, title, keywords, content) {
         
         toastr.success('Lore entry saved to ' + lorebookName);
     } catch (error) {
-        console.error('Lore Extractor: Failed to save entry', error);
+        console.error('SillyTavern-Scribe!: Failed to save entry', error);
         toastr.error('Failed to save lore entry');
     }
 }
 
 // Initialize extension
 jQuery(async () => {
+console.log('SillyTavern-Scribe!: Extension loaded');
+    
     // Register mouseup listener on #chat for text selection
     $('#chat').on('mouseup', onTextSelected);
     
@@ -292,6 +303,8 @@ jQuery(async () => {
     
     // Handle button click
     extractBtn.addEventListener('click', async () => {
+        console.log('SillyTavern-Scribe!: Extract button clicked');
+        
         const selection = window.getSelection();
         const selectedText = selection.toString().trim();
         
@@ -330,7 +343,7 @@ jQuery(async () => {
             }
         } catch (error) {
             toastr.clear();
-            console.error('Lore Extractor: Error generating lore entry', error);
+            console.error('SillyTavern-Scribe!: Error generating lore entry', error);
             toastr.error('Failed to generate lore entry. Please try again.');
         }
     });
