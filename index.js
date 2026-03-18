@@ -1,4 +1,9 @@
-import { extension_settings } from '../../../extensions.js';
+// Default settings for this extension
+const defaultSettings = {
+    selectedLorebook: ''
+};
+
+import { extension_settings, loadSettings } from '../../../extensions.js';
 import { eventSource, event_types, saveSettingsDebounced } from '../../../../script.js';
 import {
     world_names,
@@ -58,7 +63,7 @@ async function generateLoreEntry(selectedText, messageContext) {
     
     const context = SillyTavern.getContext();
     const response = await context.generateQuietPrompt({
-        prompt: `You are a lore assistant. Based on the text below, write a lorebook entry for the entity or concept described.
+        quietPrompt: `You are a lore assistant. Based on the text below, write a lorebook entry for the entity or concept described.
 Return ONLY valid JSON in this exact format, no other text:
 {
   "title": "Entity name",
@@ -82,14 +87,17 @@ Message context: ${messageContext}`
 function parseLoreResponse(response) {
     try {
         // Strip markdown code fences if present
-        let cleanedResponse = response.trim();
-        if (cleanedResponse.startsWith('```')) {
-            cleanedResponse = cleanedResponse.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+        let cleaned = response.trim();
+        if (cleaned.startsWith('```')) {
+            cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
         }
+        // Defensive fallback: extract the first {...} block in case of extra text
+        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+        if (jsonMatch) cleaned = jsonMatch;
         
-        const parsed = JSON.parse(cleanedResponse);
+        const parsed = JSON.parse(cleaned);
         
-        if (parsed.title && parsed.keywords && parsed.content) {
+        if (parsed.title && Array.isArray(parsed.keywords) && parsed.content) {
             return {
                 title: parsed.title,
                 keywords: parsed.keywords,
@@ -99,7 +107,7 @@ function parseLoreResponse(response) {
         
         return null;
     } catch (e) {
-        console.error('SillyTavern-Scribe!: Failed to parse LLM response', e);
+        console.error('[Scribe] Failed to parse LLM response:', e, '\nRaw response:', response);
         return null;
     }
 }
@@ -149,9 +157,13 @@ function showReviewModal(draft, messageContext) {
     
     // Lorebook selector
     const lorebookGroup = document.createElement('div');
+    const savedLorebook = extension_settings['SillyTavern-Scribe']?.selectedLorebook || '';
     let lorebookOptions = '';
     if (world_names && world_names.length > 0) {
-        lorebookOptions = world_names.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('');
+        lorebookOptions = world_names.map(name => {
+            const selected = name === savedLorebook ? ' selected' : '';
+            return `<option value="${escapeHtml(name)}"${selected}>${escapeHtml(name)}</option>`;
+        }).join('');
     } else {
         lorebookOptions = '<option value="">(No lorebooks found)</option>';
     }
@@ -207,6 +219,14 @@ function showReviewModal(draft, messageContext) {
         const keywords = keywordsStr ? keywordsStr.split(',').map(k => k.trim()).filter(k => k) : [];
         
         saveLoreEntry(lorebookName, title, keywords, content);
+        
+        // Persist the chosen lorebook back to settings
+        if (!extension_settings['SillyTavern-Scribe']) {
+            extension_settings['SillyTavern-Scribe'] = {};
+        }
+        extension_settings['SillyTavern-Scribe'].selectedLorebook = lorebookName;
+        saveSettingsDebounced();
+        
         overlay.remove();
     };
     
@@ -253,10 +273,7 @@ function escapeHtml(text) {
 async function saveLoreEntry(lorebookName, title, keywords, content) {
     try {
         // Load the lorebook first
-        await loadWorldInfo(lorebookName);
-        
-        // Get the lorebook data
-        const lorebookData = world_info[lorebookName];
+        const lorebookData = await loadWorldInfo(lorebookName);
         if (!lorebookData) {
             toastr.error('Failed to load lorebook: ' + lorebookName);
             return;
@@ -267,7 +284,8 @@ async function saveLoreEntry(lorebookName, title, keywords, content) {
         
         // Populate entry fields
         entry.comment = title;
-        entry.key = keywords.join(', ');
+        entry.key = keywords;
+        entry.keysecondary = [];
         entry.content = content;
         entry.selective = true;
         entry.probability = 100;
@@ -287,8 +305,54 @@ async function saveLoreEntry(lorebookName, title, keywords, content) {
     }
 }
 
+/**
+ * Injects the extension settings panel into SillyTavern's settings UI
+ */
+function injectSettingsPanel() {
+    const settingsHtml = `
+        <div class="inline-drawer">
+            <div class="inline-drawer-toggle notalone">
+                <span>Scribe</span>
+            </div>
+            <div class="inline-drawer-content">
+                <div class="flex-container">
+                    <select id="scribe-lorebook-select" class="text_pole">
+                        ${world_names && world_names.length > 0 
+                            ? world_names.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('')
+                            : '<option value="">(No lorebooks found)</option>'
+                        }
+                    </select>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    $('#extensions_settings').append(settingsHtml);
+    
+    // Set the saved lorebook as selected
+    const savedLorebook = extension_settings['SillyTavern-Scribe']?.selectedLorebook;
+    if (savedLorebook) {
+        $('#scribe-lorebook-select').val(savedLorebook);
+    }
+    
+    // Save on change
+    $('#scribe-lorebook-select').on('change', function() {
+        if (!extension_settings['SillyTavern-Scribe']) {
+            extension_settings['SillyTavern-Scribe'] = {};
+        }
+        extension_settings['SillyTavern-Scribe'].selectedLorebook = $(this).val();
+        saveSettingsDebounced();
+    });
+}
+
 // Initialize extension
 jQuery(async () => {
+    // Load extension settings
+    await loadSettings();
+    
+    // Inject settings panel
+    injectSettingsPanel();
+    
 console.log('SillyTavern-Scribe!: Extension loaded');
     
     // Register mouseup listener on #chat for text selection
