@@ -15,30 +15,58 @@ import {
     world_info
 } from '../../../world-info.js';
 
-// Connection profiles API (SillyTavern 1.12.6+)
-let getConnectionProfiles = null;
-try {
-    const connectionManagerModule = require_connection?.('connection-manager');
-    if (connectionManagerModule) {
-        getConnectionProfiles = connectionManagerModule.getConnectionProfiles;
-    }
-} catch (e) {
-    console.warn('SillyTavern-Scribe!: Connection manager module not available');
-}
-
 /**
  * Gets the list of available connection profiles
  * @returns {Promise<Array>} - Array of profile objects with id and name
  */
 async function getAvailableProfiles() {
-    if (getConnectionProfiles) {
+    console.log('SillyTavern-Scribe!: Getting available profiles...');
+    
+    // Try multiple approaches to get connection profiles
+    
+    // Approach 1: Check for connection_profiles in window
+    if (window.connection_profiles && Array.isArray(window.connection_profiles)) {
+        console.log('SillyTavern-Scribe!: Found profiles via window.connection_profiles');
+        return window.connection_profiles.map(p => ({ id: p.id || p.name, name: p.name }));
+    }
+    
+    // Approach 2: Try to get from SillyTavern global
+    if (window.SillyTavern?.libs?.connection_profiles) {
+        console.log('SillyTavern-Scribe!: Found profiles via SillyTavern.libs');
+        return window.SillyTavern.libs.connection_profiles.map(p => ({ id: p.id || p.name, name: p.name }));
+    }
+    
+    // Approach 3: Check for getConnectionProfiles in various places
+    const context = SillyTavern.getContext?.();
+    if (context?.getConnectionProfiles) {
         try {
-            const profiles = await getConnectionProfiles();
-            return profiles.map(p => ({ id: p.id, name: p.name }));
+            const profiles = await context.getConnectionProfiles();
+            console.log('SillyTavern-Scribe!: Found profiles via context.getConnectionProfiles');
+            return profiles.map(p => ({ id: p.id || p.name, name: p.name }));
         } catch (e) {
-            console.error('SillyTavern-Scribe!: Failed to get profiles:', e);
+            console.warn('SillyTavern-Scribe!: context.getConnectionProfiles failed:', e);
         }
     }
+    
+    // Approach 4: Check for profiles in extension_settings or similar
+    if (window.extension_settings?.connection_profiles) {
+        console.log('SillyTavern-Scribe!: Found profiles via extension_settings');
+        return window.extension_settings.connection_profiles.map(p => ({ id: p.id || p.name, name: p.name }));
+    }
+    
+    // Approach 5: Try direct import from connection-manager
+    try {
+        // Check if there's a global getProfiles function
+        if (typeof window.getProfiles === 'function') {
+            const profiles = await window.getProfiles();
+            console.log('SillyTavern-Scribe!: Found profiles via window.getProfiles');
+            return profiles.map(p => ({ id: p.id || p.name, name: p.name }));
+        }
+    } catch (e) {
+        console.warn('SillyTavern-Scribe!: window.getProfiles not available:', e);
+    }
+    
+    console.log('SillyTavern-Scribe!: No profiles found via any approach');
     return [];
 }
 
@@ -79,6 +107,59 @@ function onTextSelected() {
 }
 
 /**
+ * Sends a request using the selected connection profile
+ * @param {string} profileId - The profile ID to use
+ * @param {string} prompt - The prompt to send
+ * @returns {Promise<string|null>} - The response or null if failed
+ */
+async function sendWithProfile(profileId, prompt) {
+    console.log('SillyTavern-Scribe!: Attempting to send with profile:', profileId);
+    
+    // Try different approaches to use connection profiles
+    
+    // Approach 1: Try ConnectionManagerRequestService from window
+    try {
+        if (window.ConnectionManagerRequestService) {
+            const result = await window.ConnectionManagerRequestService.sendRequest(profileId, prompt, false);
+            if (result?.response) {
+                console.log('SillyTavern-Scribe!: Success via window.ConnectionManagerRequestService');
+                return result.response;
+            }
+        }
+    } catch (e) {
+        console.warn('SillyTavern-Scribe!: window.ConnectionManagerRequestService failed:', e);
+    }
+    
+    // Approach 2: Try from SillyTavern global
+    try {
+        if (window.SillyTavern?.ConnectionManagerRequestService) {
+            const result = await window.SillyTavern.ConnectionManagerRequestService.sendRequest(profileId, prompt, false);
+            if (result?.response) {
+                console.log('SillyTavern-Scribe!: Success via SillyTavern.ConnectionManagerRequestService');
+                return result.response;
+            }
+        }
+    } catch (e) {
+        console.warn('SillyTavern-Scribe!: SillyTavern.ConnectionManagerRequestService failed:', e);
+    }
+    
+    // Approach 3: Try sendCustomGenerationRequest or similar
+    try {
+        if (window.sendCustomGenerationRequest) {
+            const result = await window.sendCustomGenerationRequest(profileId, prompt);
+            if (result?.response) {
+                console.log('SillyTavern-Scribe!: Success via sendCustomGenerationRequest');
+                return result.response;
+            }
+        }
+    } catch (e) {
+        console.warn('SillyTavern-Scribe!: sendCustomGenerationRequest failed:', e);
+    }
+    
+    return null;
+}
+
+/**
  * Generates a lorebook entry using the LLM
  * @param {string} selectedText - The text selected by the user
  * @param {string} messageContext - The surrounding message context
@@ -102,20 +183,12 @@ Return ONLY valid JSON in this exact format, no other text:
 Selected text: ${selectedText}
 Message context: ${messageContext}`;
 
-    // Try to use ConnectionManagerRequestService if a profile is selected
+    // Try to use a connection profile if one is selected
     if (selectedProfile) {
-        try {
-            const connectionManagerModule = require_connection?.('connection-manager');
-            if (connectionManagerModule?.ConnectionManagerRequestService) {
-                const service = connectionManagerModule.ConnectionManagerRequestService;
-                const result = await service.sendRequest(selectedProfile, prompt, false);
-                if (result?.response) {
-                    console.log('SillyTavern-Scribe!: LLM response received (via profile):', result.response);
-                    return result.response;
-                }
-            }
-        } catch (e) {
-            console.warn('SillyTavern-Scribe!: Failed to use profile, falling back to default:', e);
+        const profileResponse = await sendWithProfile(selectedProfile, prompt);
+        if (profileResponse) {
+            console.log('SillyTavern-Scribe!: LLM response received (via profile):', profileResponse);
+            return profileResponse;
         }
     }
     
