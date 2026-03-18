@@ -107,7 +107,7 @@ function parseLoreResponse(response) {
         
         return null;
     } catch (e) {
-        console.error('[Scribe] Failed to parse LLM response:', e, '\nRaw response:', response);
+        console.error('[SillyTavern-Scribe] Failed to parse LLM response:', e, '\nRaw response:', response);
         return null;
     }
 }
@@ -317,7 +317,7 @@ function injectSettingsPanel() {
     <div id="scribe_settings" class="extension_settings">
       <div class="inline-drawer">
         <div class="inline-drawer-toggle inline-drawer-header">
-          <b>Scribe</b>
+          <b>SillyTavern - Scribe!</b>
           <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
         </div>
         <div class="inline-drawer-content" style="display:none;">
