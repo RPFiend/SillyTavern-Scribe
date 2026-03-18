@@ -82,9 +82,10 @@ async function sendWithProfile(profileId, prompt) {
  * Generates a lorebook entry using the LLM
  * @param {string} selectedText - The text selected by the user
  * @param {string} messageContext - The surrounding message context
+ * @param {string} revisionInstructions - Optional revision instructions
  * @returns {Promise<string>} - The LLM response
  */
-async function generateLoreEntry(selectedText, messageContext) {
+async function generateLoreEntry(selectedText, messageContext, revisionInstructions = '') {
     const selectedProfile = extension_settings['SillyTavern-Scribe']?.selectedProfile;
     console.log('SillyTavern-Scribe!: Sending request to LLM');
     console.log('SillyTavern-Scribe!: Selected text:', selectedText);
@@ -100,7 +101,7 @@ Return ONLY valid JSON in this exact format, no other text:
 }
 
 Selected text: ${selectedText}
-Message context: ${messageContext}`;
+Message context: ${messageContext}${revisionInstructions ? `\nRevision instructions: ${revisionInstructions}` : ''}`;
 
     // Try to use a connection profile if one is selected
     if (selectedProfile) {
@@ -155,9 +156,10 @@ function parseLoreResponse(response) {
 /**
  * Shows the review modal for editing the generated lore entry
  * @param {{title: string, keywords: string[], content: string}} draft - The generated draft
+ * @param {string} selectedText - The original selected text
  * @param {string} messageContext - The original message context
  */
-function showReviewModal(draft, messageContext) {
+function showReviewModal(draft, selectedText, messageContext) {
     console.log('SillyTavern-Scribe!: Showing review modal with draft:', draft);
     
     // Remove existing modal if any
@@ -212,6 +214,13 @@ function showReviewModal(draft, messageContext) {
         <select id="le-lorebook">${lorebookOptions}</select>
     `;
     
+    // Revision instructions field
+    const revisionGroup = document.createElement('div');
+    revisionGroup.innerHTML = `
+        <label for="le-revision">Revision Instructions (optional)</label>
+        <textarea id="le-revision" placeholder="e.g. Make it shorter, add more mystery..."></textarea>
+    `;
+    
     // Buttons
     const buttonsDiv = document.createElement('div');
     buttonsDiv.className = 'le-modal-buttons';
@@ -228,6 +237,46 @@ function showReviewModal(draft, messageContext) {
         font-family: 'Inter', system-ui, sans-serif;
     `;
     cancelBtn.onclick = () => overlay.remove();
+    
+    const regenBtn = document.createElement('button');
+    regenBtn.textContent = '🔄 Regenerate';
+    regenBtn.style.cssText = `
+        padding: 8px 16px;
+        background: rgba(255,255,255,0.1);
+        border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 6px;
+        color: var(--SmartThemeBodyColor);
+        cursor: pointer;
+        font-family: 'Inter', system-ui, sans-serif;
+    `;
+    regenBtn.onclick = async () => {
+        const revisionInstructions = document.getElementById('le-revision').value.trim();
+
+        // Show loading state on button, disable to prevent double-clicks
+        regenBtn.disabled = true;
+        regenBtn.textContent = '⏳ Regenerating...';
+
+        try {
+            const response = await generateLoreEntry(selectedText, messageContext, revisionInstructions);
+            const parsed = parseLoreResponse(response);
+
+            if (parsed) {
+                // Update fields in place — do not close the modal
+                document.getElementById('le-title').value = parsed.title;
+                document.getElementById('le-keywords').value = parsed.keywords.join(', ');
+                document.getElementById('le-content').value = parsed.content;
+                // Revision field is intentionally left unchanged
+            } else {
+                toastr.error('Failed to parse regenerated entry. Try again.');
+            }
+        } catch (e) {
+            console.error('SillyTavern-Scribe!: Regenerate failed:', e);
+            toastr.error('Regeneration failed. Please try again.');
+        } finally {
+            regenBtn.disabled = false;
+            regenBtn.textContent = '🔄 Regenerate';
+        }
+    };
     
     const saveBtn = document.createElement('button');
     saveBtn.textContent = 'Save';
@@ -271,6 +320,7 @@ function showReviewModal(draft, messageContext) {
     };
     
     buttonsDiv.appendChild(cancelBtn);
+    buttonsDiv.appendChild(regenBtn);
     buttonsDiv.appendChild(saveBtn);
     
     // Assemble modal
@@ -278,6 +328,7 @@ function showReviewModal(draft, messageContext) {
     modal.appendChild(keywordsGroup);
     modal.appendChild(contentGroup);
     modal.appendChild(lorebookGroup);
+    modal.appendChild(revisionGroup);
     modal.appendChild(buttonsDiv);
     overlay.appendChild(modal);
     
@@ -467,7 +518,7 @@ console.log('SillyTavern-Scribe!: Extension loaded');
             const parsed = parseLoreResponse(response);
             
             if (parsed) {
-                showReviewModal(parsed, messageContext);
+                showReviewModal(parsed, selectedText, messageContext);
             } else {
                 toastr.error('Failed to parse the generated lore entry. Please try again.');
             }
