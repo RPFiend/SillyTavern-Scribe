@@ -1,6 +1,7 @@
 // Default settings for this extension
 const defaultSettings = {
-    selectedLorebook: ''
+    selectedLorebook: '',
+    selectedProfile: ''
 };
 
 import { extension_settings } from '../../../extensions.js';
@@ -13,6 +14,33 @@ import {
     reloadEditor,
     world_info
 } from '../../../world-info.js';
+
+// Connection profiles API (SillyTavern 1.12.6+)
+let getConnectionProfiles = null;
+try {
+    const connectionManagerModule = require_connection?.('connection-manager');
+    if (connectionManagerModule) {
+        getConnectionProfiles = connectionManagerModule.getConnectionProfiles;
+    }
+} catch (e) {
+    console.warn('SillyTavern-Scribe!: Connection manager module not available');
+}
+
+/**
+ * Gets the list of available connection profiles
+ * @returns {Promise<Array>} - Array of profile objects with id and name
+ */
+async function getAvailableProfiles() {
+    if (getConnectionProfiles) {
+        try {
+            const profiles = await getConnectionProfiles();
+            return profiles.map(p => ({ id: p.id, name: p.name }));
+        } catch (e) {
+            console.error('SillyTavern-Scribe!: Failed to get profiles:', e);
+        }
+    }
+    return [];
+}
 
 /**
  * Shows the floating extract button near the text selection
@@ -57,13 +85,13 @@ function onTextSelected() {
  * @returns {Promise<string>} - The LLM response
  */
 async function generateLoreEntry(selectedText, messageContext) {
+    const selectedProfile = extension_settings['SillyTavern-Scribe']?.selectedProfile;
     console.log('SillyTavern-Scribe!: Sending request to LLM');
     console.log('SillyTavern-Scribe!: Selected text:', selectedText);
     console.log('SillyTavern-Scribe!: Message context:', messageContext);
+    console.log('SillyTavern-Scribe!: Using profile:', selectedProfile || 'Default (Chat)');
     
-    const context = SillyTavern.getContext();
-    const response = await context.generateQuietPrompt({
-        quietPrompt: `You are a lore assistant. Based on the text below, write a lorebook entry for the entity or concept described.
+    const prompt = `You are a lore assistant. Based on the text below, write a lorebook entry for the entity or concept described.
 Return ONLY valid JSON in this exact format, no other text:
 {
   "title": "Entity name",
@@ -72,8 +100,28 @@ Return ONLY valid JSON in this exact format, no other text:
 }
 
 Selected text: ${selectedText}
-Message context: ${messageContext}`
-    });
+Message context: ${messageContext}`;
+
+    // Try to use ConnectionManagerRequestService if a profile is selected
+    if (selectedProfile) {
+        try {
+            const connectionManagerModule = require_connection?.('connection-manager');
+            if (connectionManagerModule?.ConnectionManagerRequestService) {
+                const service = connectionManagerModule.ConnectionManagerRequestService;
+                const result = await service.sendRequest(selectedProfile, prompt, false);
+                if (result?.response) {
+                    console.log('SillyTavern-Scribe!: LLM response received (via profile):', result.response);
+                    return result.response;
+                }
+            }
+        } catch (e) {
+            console.warn('SillyTavern-Scribe!: Failed to use profile, falling back to default:', e);
+        }
+    }
+    
+    // Fall back to default context
+    const context = SillyTavern.getContext();
+    const response = await context.generateQuietPrompt({ quietPrompt: prompt });
     
     console.log('SillyTavern-Scribe!: LLM response received:', response);
     return response;
@@ -308,10 +356,17 @@ async function saveLoreEntry(lorebookName, title, keywords, content) {
 /**
  * Injects the extension settings panel into SillyTavern's settings UI
  */
-function injectSettingsPanel() {
-    const options = world_names && world_names.length > 0
+async function injectSettingsPanel() {
+    const lorebookOptions = world_names && world_names.length > 0
         ? world_names.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('')
         : '';
+
+    // Get available connection profiles
+    const profiles = await getAvailableProfiles();
+    const savedProfile = extension_settings['SillyTavern-Scribe']?.selectedProfile || '';
+    const profileOptions = profiles.length > 0
+        ? profiles.map(p => `<option value="${escapeHtml(p.id)}"${p.id === savedProfile ? ' selected' : ''}>${escapeHtml(p.name)}</option>`).join('')
+        : '<option value="">(No profiles available)</option>';
 
     const html = `
     <div id="scribe_settings" class="extension_settings">
@@ -322,10 +377,19 @@ function injectSettingsPanel() {
         </div>
         <div class="inline-drawer-content" style="display:none;">
           <div class="flex-container flexFlowColumn">
-            <label for="scribe-lorebook-select">Default Lorebook</label>
+            <label for="scribe-profile-select">Connection Profile</label>
+            <select id="scribe-profile-select" class="text_pole">
+              <option value="">Use Default (Chat)</option>
+              ${profileOptions}
+            </select>
+            <small style="opacity:0.6; font-size:11px; margin-top:4px;">
+              Select a profile for cheaper/faster lore generation.
+            </small>
+            
+            <label for="scribe-lorebook-select" style="margin-top:12px;">Default Lorebook</label>
             <select id="scribe-lorebook-select" class="text_pole">
               <option value="">(Select a lorebook)</option>
-              ${options}
+              ${lorebookOptions}
             </select>
             <small style="opacity:0.6; font-size:11px; margin-top:4px;">
               Highlight text in any chat message, then click "📖 Extract Lore".
@@ -343,13 +407,23 @@ function injectSettingsPanel() {
         $('#scribe-lorebook-select').val(savedLorebook);
     }
 
-    // Save on change
+    // Save lorebook on change
     $('#scribe-lorebook-select').on('change', function() {
         if (!extension_settings['SillyTavern-Scribe']) {
             extension_settings['SillyTavern-Scribe'] = {};
         }
         extension_settings['SillyTavern-Scribe'].selectedLorebook = $(this).val();
         saveSettingsDebounced();
+    });
+
+    // Save profile on change
+    $('#scribe-profile-select').on('change', function() {
+        if (!extension_settings['SillyTavern-Scribe']) {
+            extension_settings['SillyTavern-Scribe'] = {};
+        }
+        extension_settings['SillyTavern-Scribe'].selectedProfile = $(this).val();
+        saveSettingsDebounced();
+        console.log('SillyTavern-Scribe!: Profile selected:', $(this).val());
     });
 }
 
