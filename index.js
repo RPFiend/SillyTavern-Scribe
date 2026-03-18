@@ -6,7 +6,6 @@ const defaultSettings = {
 
 import { extension_settings } from '../../../extensions.js';
 import { eventSource, event_types, saveSettingsDebounced } from '../../../../script.js';
-import { ConnectionManagerRequestService } from '../../../../shared.js';
 import {
     world_names,
     loadWorldInfo,
@@ -60,19 +59,25 @@ function onTextSelected() {
  */
 async function sendWithProfile(profileId, prompt) {
     console.log('SillyTavern-Scribe!: Attempting to send with profile:', profileId);
-    
+
+    if (!profileId) {
+        console.warn('SillyTavern-Scribe!: No profile ID provided');
+        return null;
+    }
+
     try {
-        const service = new ConnectionManagerRequestService();
+        const context = SillyTavern.getContext();
+        const service = new context.ConnectionManagerRequestService();
+
         const result = await service.sendRequest(profileId, prompt, 1024);
-        
+
         if (result?.response) {
-            console.log('SillyTavern-Scribe!: Success via ConnectionManagerRequestService');
+            console.log('SillyTavern-Scribe!: Success via profile');
             return result.response;
         } else if (result?.content) {
-            console.log('SillyTavern-Scribe!: Success via ConnectionManagerRequestService (content field)');
             return result.content;
         }
-        
+
         console.warn('SillyTavern-Scribe!: No response from ConnectionManagerRequestService');
         return null;
     } catch (e) {
@@ -387,9 +392,11 @@ async function injectSettingsPanel() {
     $('#extensions_settings').append(html);
 
     // Set up connection profile dropdown using handleDropdown
-    const service = new ConnectionManagerRequestService();
+    const context = SillyTavern.getContext();
+    const service = new context.ConnectionManagerRequestService();
     const profileSelect = document.getElementById('scribe-profile-select');
     const savedProfile = extension_settings['SillyTavern-Scribe']?.selectedProfile || '';
+
     service.handleDropdown(profileSelect, (selectedId) => {
         if (!extension_settings['SillyTavern-Scribe']) {
             extension_settings['SillyTavern-Scribe'] = {};
@@ -398,7 +405,7 @@ async function injectSettingsPanel() {
         saveSettingsDebounced();
         console.log('SillyTavern-Scribe!: Profile selected:', selectedId);
     });
-    // Restore previously saved selection
+
     if (savedProfile) {
         profileSelect.value = savedProfile;
     }
