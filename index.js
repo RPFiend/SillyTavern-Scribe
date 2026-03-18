@@ -60,32 +60,20 @@ function onTextSelected() {
 async function sendWithProfile(profileId, prompt) {
     if (!profileId) return null;
 
-    const context = SillyTavern.getContext();
-
-    // Validate that the profile exists and has an API set before calling sendRequest
-    const profiles = context.extensionSettings?.connectionManager?.profiles ?? [];
-    const profile = profiles.find(p => p.id === profileId);
-
-    if (!profile) {
-        console.warn('SillyTavern-Scribe!: Profile not found:', profileId);
-        return null;
-    }
-
-    // A profile must have an `api` field set or sendRequest will throw
-    if (!profile.api) {
-        toastr.warning('Selected connection profile has no API configured. Using default connection.');
-        return null;
-    }
-
     try {
-        const service = new context.ConnectionManagerRequestService();
-        const result = await service.sendRequest(profileId, prompt, 1024);
+        const { ConnectionManagerRequestService } = SillyTavern.getContext();
+        const result = await ConnectionManagerRequestService.sendRequest(
+            profileId,
+            prompt,
+            1024
+        );
 
         if (result?.response) return result.response;
         if (result?.content) return result.content;
+        console.warn('SillyTavern-Scribe!: No response content from profile request');
         return null;
     } catch (e) {
-        console.error('SillyTavern-Scribe!: ConnectionManagerRequestService failed:', e);
+        console.error('SillyTavern-Scribe!: Profile request failed:', e);
         return null;
     }
 }
@@ -395,39 +383,20 @@ async function injectSettingsPanel() {
 
     $('#extensions_settings').append(html);
 
-    // Build profile dropdown manually
-    const context = SillyTavern.getContext();
-    const profiles = context.extensionSettings?.connectionManager?.profiles ?? [];
+    const { ConnectionManagerRequestService } = SillyTavern.getContext();
     const profileSelect = document.getElementById('scribe-profile-select');
     const savedProfile = extension_settings['SillyTavern-Scribe']?.selectedProfile || '';
 
-    // Add a "use default" option
-    const defaultOption = document.createElement('option');
-    defaultOption.value = '';
-    defaultOption.textContent = 'Use Default (Chat)';
-    profileSelect.appendChild(defaultOption);
-
-    // Only add profiles that have an api field set
-    for (const p of profiles) {
-        if (!p.api) continue;  // skip profiles without API — these cause validateProfile to throw
-        const option = document.createElement('option');
-        option.value = p.id;
-        option.textContent = p.name;
-        profileSelect.appendChild(option);
-    }
-
-    // Restore saved selection
-    if (savedProfile) profileSelect.value = savedProfile;
-
-    // Save on change
-    profileSelect.addEventListener('change', function() {
+    ConnectionManagerRequestService.handleDropdown(profileSelect, (selectedId) => {
         if (!extension_settings['SillyTavern-Scribe']) {
             extension_settings['SillyTavern-Scribe'] = {};
         }
-        extension_settings['SillyTavern-Scribe'].selectedProfile = this.value;
+        extension_settings['SillyTavern-Scribe'].selectedProfile = selectedId;
         saveSettingsDebounced();
-        console.log('SillyTavern-Scribe!: Profile selected:', this.value);
+        console.log('SillyTavern-Scribe!: Profile selected:', selectedId);
     });
+
+    if (savedProfile) profileSelect.value = savedProfile;
 
     // Set the saved lorebook as selected
     const savedLorebook = extension_settings['SillyTavern-Scribe']?.selectedLorebook;
