@@ -67,7 +67,7 @@ async function sendWithProfile(profileId, prompt) {
 
     try {
         const context = SillyTavern.getContext();
-        const service = new context.ConnectionManagerRequestService();
+        const service = context.ConnectionManagerRequestService;
 
         const result = await service.sendRequest(profileId, prompt, 1024);
 
@@ -393,7 +393,7 @@ async function injectSettingsPanel() {
 
     // Set up connection profile dropdown using handleDropdown
     const context = SillyTavern.getContext();
-    const service = new context.ConnectionManagerRequestService();
+    const service = context.ConnectionManagerRequestService;
     const profileSelect = document.getElementById('scribe-profile-select');
     const savedProfile = extension_settings['SillyTavern-Scribe']?.selectedProfile || '';
 
