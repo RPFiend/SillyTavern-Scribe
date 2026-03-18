@@ -495,7 +495,7 @@ async function injectSettingsPanel() {
               Select a profile for cheaper/faster lore generation.
             </small>
             
-            <label for="scribe-lorebook-select" style="margin-top:12px;">Default Lorebook</label>
+            <label for="scribe-lorebook-select" style="margin-top:12px;">Active Lorebook</label>
             <select id="scribe-lorebook-select" class="text_pole">
               <option value="">(Select a lorebook)</option>
               ${lorebookOptions}
