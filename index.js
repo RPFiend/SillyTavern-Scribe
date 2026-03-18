@@ -3,7 +3,7 @@ const defaultSettings = {
     selectedLorebook: ''
 };
 
-import { extension_settings, loadSettings } from '../../../extensions.js';
+import { extension_settings } from '../../../extensions.js';
 import { eventSource, event_types, saveSettingsDebounced } from '../../../../script.js';
 import {
     world_names,
@@ -347,9 +347,6 @@ function injectSettingsPanel() {
 
 // Initialize extension
 jQuery(async () => {
-    // Load extension settings
-    await loadSettings();
-    
     // Inject settings panel
     injectSettingsPanel();
     
