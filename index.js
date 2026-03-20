@@ -81,9 +81,9 @@ async function sendWithProfile(profileId, prompt) {
             1024
         );
 
-        if (result?.response) return result.response;
-        if (result?.content) return result.content;
-        console.warn('SillyTavern-Scribe!: No response content from profile request');
+        const text = (result?.response || result?.content || '').trim();
+        if (text) return text;
+        console.warn('SillyTavern-Scribe!: Empty response from profile request');
         return null;
     } catch (e) {
         console.error('SillyTavern-Scribe!: Profile request failed:', e);
@@ -200,9 +200,15 @@ Message context: ${messageContext}${revisionInstructions ? `\nRevision instructi
     // Fall back to default context
     const context = SillyTavern.getContext();
     const response = await context.generateQuietPrompt({ quietPrompt: prompt });
-    
-    console.log('SillyTavern-Scribe!: LLM response received:', response);
-    return response;
+    const trimmed = (response || '').trim();
+
+    if (!trimmed) {
+        console.warn('SillyTavern-Scribe!: Empty response from generateQuietPrompt');
+        throw new Error('The model returned an empty response. Try again or check your connection profile settings.');
+    }
+
+    console.log('SillyTavern-Scribe!: LLM response received:', trimmed);
+    return trimmed;
 }
 
 /**
@@ -211,6 +217,11 @@ Message context: ${messageContext}${revisionInstructions ? `\nRevision instructi
  * @returns {{title: string, keywords: string[], content: string} | null}
  */
 function parseLoreResponse(response) {
+    if (!response || typeof response !== 'string' || !response.trim()) {
+        console.error('[SillyTavern-Scribe] Empty or invalid response passed to parser');
+        return null;
+    }
+
     try {
         let cleaned = response.trim();
 
