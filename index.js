@@ -8,6 +8,9 @@ const defaultSettings = {
     includeLorebook: false,
 };
 
+// Stores the active selection so mobile taps don't lose it
+let savedSelection = null;
+
 import { extension_settings } from '../../../extensions.js';
 import { eventSource, event_types, saveSettingsDebounced } from '../../../../script.js';
 import {
@@ -19,40 +22,46 @@ import {
     world_info
 } from '../../../world-info.js';
 
-/**
- * Shows the floating extract button near the text selection
- */
 function onTextSelected() {
     const selection = window.getSelection();
-    const selectionText = selection.toString().trim();
-    
-    console.log('SillyTavern-Scribe!: Text selection detected');
-    
+    const selectionText = selection?.toString().trim();
+
     if (selectionText && selection.rangeCount > 0) {
         const range = selection.getRangeAt(0);
         const container = range.commonAncestorContainer;
-        const mesTextElement = container.nodeType === Node.TEXT_NODE 
+        const mesTextElement = container.nodeType === Node.TEXT_NODE
             ? container.parentElement?.closest('.mes_text')
-            : container.closest('.mes_text');
-        
+            : container.closest?.('.mes_text');
+
         if (mesTextElement) {
+            // Save selection now before any tap can collapse it
+            savedSelection = {
+                text: selectionText,
+                range: range.cloneRange(),
+                mesText: mesTextElement.textContent,
+            };
+
             const rect = range.getBoundingClientRect();
             const btn = document.getElementById('le-extract-btn');
-            
+
             if (btn) {
-                btn.style.left = `${rect.left + window.scrollX}px`;
-                btn.style.top = `${rect.bottom + window.scrollY + 5}px`;
+                // Position above the selection (44px covers button height + gap)
+                const top  = rect.top  + window.scrollY - 44;
+                // Center horizontally on the selection
+                const left = rect.left + window.scrollX + (rect.width / 2) - 60;
+
+                btn.style.left    = `${Math.max(8, left)}px`;
+                btn.style.top     = `${Math.max(8, top)}px`;
                 btn.style.display = 'block';
             }
             return;
         }
     }
-    
-    // Hide button if no valid selection
+
+    // No valid selection — hide button and clear saved selection
     const btn = document.getElementById('le-extract-btn');
-    if (btn) {
-        btn.style.display = 'none';
-    }
+    if (btn) btn.style.display = 'none';
+    savedSelection = null;
 }
 
 /**
@@ -1001,41 +1010,64 @@ jQuery(async () => {
     
 console.log('SillyTavern-Scribe!: Extension loaded');
     
-    // Register mouseup listener on #chat for text selection
+    // Desktop
     $('#chat').on('mouseup', onTextSelected);
-    
+
+    // Mobile — touchend fires after finger lifts
+    $('#chat').on('touchend', () => {
+        // Small delay lets the browser finalize the selection after touchend
+        setTimeout(onTextSelected, 50);
+    });
+
+    // Universal fallback — selectionchange works on iOS and Android
+    document.addEventListener('selectionchange', () => {
+        // Only act if the selection is inside #chat
+        const selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0) {
+            const btn = document.getElementById('le-extract-btn');
+            if (btn) btn.style.display = 'none';
+            savedSelection = null;
+            return;
+        }
+        const container = selection.getRangeAt(0).commonAncestorContainer;
+        const inChat = document.getElementById('chat')
+            ?.contains(container);
+        if (inChat) onTextSelected();
+    });
+
     // Create the floating extract button
     const extractBtn = document.createElement('button');
     extractBtn.id = 'le-extract-btn';
     extractBtn.textContent = '📖 Extract Lore';
     extractBtn.style.display = 'none';
     document.body.appendChild(extractBtn);
+
+    extractBtn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+    }, { passive: false });
     
     // Handle button click
     extractBtn.addEventListener('click', async () => {
         console.log('SillyTavern-Scribe!: Extract button clicked');
-        
-        const selection = window.getSelection();
-        const selectedText = selection.toString().trim();
-        
+
+        // Use savedSelection so mobile taps don't lose the selection
+        const selectedText = savedSelection?.text
+            || window.getSelection()?.toString().trim()
+            || '';
+
         if (!selectedText) {
             return;
         }
-        
-        // Get the parent mes_text element
-        const range = selection.getRangeAt(0);
-        const container = range.commonAncestorContainer;
-        const mesTextElement = container.nodeType === Node.TEXT_NODE 
-            ? container.parentElement?.closest('.mes_text')
-            : container.closest('.mes_text');
-        
-        const messageContext = mesTextElement ? mesTextElement.textContent : '';
-        
+
+        const messageContext = savedSelection?.mesText
+            || '';
+
         // Hide the button
         extractBtn.style.display = 'none';
-        
+
         // Clear the selection
-        selection.removeAllRanges();
+        window.getSelection()?.removeAllRanges();
+        savedSelection = null;
         
         // Show loading indicator
         toastr.info('Generating lore entry...', '', { timeOut: 0, extendedTimeOut: 0 });
