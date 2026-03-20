@@ -230,18 +230,21 @@ function parseLoreResponse(response) {
 }
 
 function fuzzyScore(a, b) {
-    // Simple character-level similarity: ratio of matching chars to total
     a = a.toLowerCase().trim();
     b = b.toLowerCase().trim();
-    if (a === b) return 1;
     if (!a || !b) return 0;
-    let matches = 0;
-    const shorter = a.length < b.length ? a : b;
-    const longer  = a.length < b.length ? b : a;
-    for (const ch of shorter) {
-        if (longer.includes(ch)) matches++;
-    }
-    return matches / longer.length;
+    if (a === b) return 1;
+
+    // Word-level overlap: what fraction of words in the shorter
+    // title appear in the longer title
+    const wordsA = a.split(/\s+/).filter(Boolean);
+    const wordsB = b.split(/\s+/).filter(Boolean);
+    const shorter = wordsA.length <= wordsB.length ? wordsA : wordsB;
+    const longer  = wordsA.length <= wordsB.length ? wordsB : wordsA;
+
+    const matches = shorter.filter(w => longer.includes(w)).length;
+    if (shorter.length === 0) return 0;
+    return matches / shorter.length;
 }
 
 async function findSimilarEntry(lorebookName, draft) {
@@ -268,8 +271,8 @@ async function findSimilarEntry(lorebookName, draft) {
             // Fuzzy title score (0–1)
             const titleScore = fuzzyScore(draftTitle, entryTitle);
 
-            // Must meet minimum threshold: 1+ keyword match OR title score >= 0.5
-            if (overlap === 0 && titleScore < 0.5) continue;
+            // Must meet minimum threshold: 1+ keyword match OR title score >= 0.6
+            if (overlap === 0 && titleScore < 0.6) continue;
 
             const combinedScore = overlap * 10 + titleScore;
             if (combinedScore > bestScore) {
@@ -371,6 +374,7 @@ async function showReviewModal(draft, selectedText, messageContext) {
     // Create modal
     const modal = document.createElement('div');
     modal.className = 'le-modal';
+    modal.style.cssText = 'max-height: 85vh; overflow-y: auto;';
 
     // Duplicate warning banner (only shown when a match is found)
     if (similarEntry) {
@@ -559,6 +563,26 @@ async function showReviewModal(draft, selectedText, messageContext) {
                 );
                 comparisonPanel.appendChild(mergeBtn);
                 comparisonPanel.appendChild(proposedArea);
+
+                const closePanelBtn = document.createElement('button');
+                closePanelBtn.textContent = 'Hide Comparison ▲';
+                closePanelBtn.style.cssText = `
+                    background: rgba(255,255,255,0.2);
+                    border: 1px solid rgba(255,255,255,0.4);
+                    border-radius: 4px;
+                    color: #fff;
+                    cursor: pointer;
+                    font-size: 12px;
+                    padding: 3px 8px;
+                    margin-top: 10px;
+                    display: block;
+                    width: 100%;
+                `;
+                closePanelBtn.onclick = () => {
+                    comparisonPanel.style.display = 'none';
+                    toggleBtn.textContent = 'Show Comparison ▼';
+                };
+                comparisonPanel.appendChild(closePanelBtn);
             }
         };
 
