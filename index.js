@@ -1042,10 +1042,6 @@ console.log('SillyTavern-Scribe!: Extension loaded');
     extractBtn.style.display = 'none';
     document.body.appendChild(extractBtn);
 
-    extractBtn.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-    }, { passive: false });
-    
     // Handle button click
     extractBtn.addEventListener('click', async () => {
         console.log('SillyTavern-Scribe!: Extract button clicked');
@@ -1087,6 +1083,13 @@ console.log('SillyTavern-Scribe!: Extension loaded');
             toastr.clear();
             console.error('SillyTavern-Scribe!: Error generating lore entry', error);
             toastr.error('Failed to generate lore entry. Please try again.');
+        }
+    });
+
+    extractBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        if (savedSelection?.text) {
+            extractBtn.click();
         }
     });
 });
