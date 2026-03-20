@@ -229,28 +229,344 @@ function parseLoreResponse(response) {
     }
 }
 
+function fuzzyScore(a, b) {
+    // Simple character-level similarity: ratio of matching chars to total
+    a = a.toLowerCase().trim();
+    b = b.toLowerCase().trim();
+    if (a === b) return 1;
+    if (!a || !b) return 0;
+    let matches = 0;
+    const shorter = a.length < b.length ? a : b;
+    const longer  = a.length < b.length ? b : a;
+    for (const ch of shorter) {
+        if (longer.includes(ch)) matches++;
+    }
+    return matches / longer.length;
+}
+
+async function findSimilarEntry(lorebookName, draft) {
+    if (!lorebookName) return null;
+    try {
+        const book = await loadWorldInfo(lorebookName);
+        if (!book?.entries) return null;
+
+        const draftTitle    = (draft.title || '').toLowerCase().trim();
+        const draftKeywords = (draft.keywords || []).map(k => k.toLowerCase().trim());
+
+        let bestEntry = null;
+        let bestScore = 0;  // combined score: keyword overlaps * 10 + fuzzy title
+
+        for (const entry of Object.values(book.entries)) {
+            if (entry.disable) continue;
+
+            const entryTitle    = (entry.comment || '').toLowerCase().trim();
+            const entryKeywords = (entry.key || []).map(k => k.toLowerCase().trim());
+
+            // Keyword overlap count
+            const overlap = draftKeywords.filter(k => entryKeywords.includes(k)).length;
+
+            // Fuzzy title score (0–1)
+            const titleScore = fuzzyScore(draftTitle, entryTitle);
+
+            // Must meet minimum threshold: 1+ keyword match OR title score >= 0.5
+            if (overlap === 0 && titleScore < 0.5) continue;
+
+            const combinedScore = overlap * 10 + titleScore;
+            if (combinedScore > bestScore) {
+                bestScore = combinedScore;
+                bestEntry = entry;
+            }
+        }
+
+        return bestEntry;
+    } catch (e) {
+        console.warn('SillyTavern-Scribe!: findSimilarEntry failed:', e);
+        return null;
+    }
+}
+
+async function generateMergedEntry(existingEntry, newDraft) {
+    const existingText = JSON.stringify({
+        title:    existingEntry.comment || '',
+        keywords: existingEntry.key     || [],
+        content:  existingEntry.content || '',
+    });
+    const newText = JSON.stringify({
+        title:    newDraft.title    || '',
+        keywords: newDraft.keywords || [],
+        content:  newDraft.content  || '',
+    });
+
+    const mergePrompt = `You are a lore editor. You have two lorebook entries about the same subject.
+Merge them into a single entry that preserves ALL unique information from both without repetition.
+Combine keyword lists (deduplicate). Choose the most descriptive title.
+Return ONLY valid JSON in this exact format, no other text:
+{
+  "title": "Entry name",
+  "keywords": ["keyword1", "keyword2"],
+  "content": "Merged lore description."
+}
+
+Existing entry: ${existingText}
+New entry: ${newText}`;
+
+    const selectedProfile = extension_settings['SillyTavern-Scribe']?.selectedProfile;
+
+    try {
+        let response;
+        if (selectedProfile) {
+            const { ConnectionManagerRequestService } = SillyTavern.getContext();
+            const result = await ConnectionManagerRequestService.sendRequest(
+                selectedProfile, mergePrompt, 1024
+            );
+            response = result?.response || result?.content || null;
+        }
+        if (!response) {
+            const ctx = SillyTavern.getContext();
+            response = await ctx.generateQuietPrompt({ quietPrompt: mergePrompt });
+        }
+        return parseLoreResponse(response);
+    } catch (e) {
+        console.error('SillyTavern-Scribe!: generateMergedEntry failed:', e);
+        return null;
+    }
+}
+
+/**
+ * Escapes HTML special characters
+ * @param {string} text - The text to escape
+ * @returns {string} - Escaped text
+ */
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
 /**
  * Shows the review modal for editing the generated lore entry
  * @param {{title: string, keywords: string[], content: string}} draft - The generated draft
  * @param {string} selectedText - The original selected text
  * @param {string} messageContext - The original message context
  */
-function showReviewModal(draft, selectedText, messageContext) {
+async function showReviewModal(draft, selectedText, messageContext) {
     console.log('SillyTavern-Scribe!: Showing review modal with draft:', draft);
-    
+
+    // Check for duplicates in the currently selected lorebook
+    const currentLorebook = extension_settings['SillyTavern-Scribe']?.selectedLorebook || '';
+    const similarEntry = currentLorebook
+        ? await findSimilarEntry(currentLorebook, draft)
+        : null;
+
     // Remove existing modal if any
     const existingModal = document.querySelector('.le-modal-overlay');
     if (existingModal) {
         existingModal.remove();
     }
-    
+
     // Create modal overlay
     const overlay = document.createElement('div');
     overlay.className = 'le-modal-overlay';
-    
+
     // Create modal
     const modal = document.createElement('div');
     modal.className = 'le-modal';
+
+    // Duplicate warning banner (only shown when a match is found)
+    if (similarEntry) {
+        const banner = document.createElement('div');
+        banner.id = 'le-duplicate-banner';
+        banner.style.cssText = `
+            background: rgba(200, 40, 40, 0.85);
+            border: 1px solid rgba(255, 80, 80, 0.6);
+            border-radius: 6px;
+            padding: 10px 14px;
+            margin-bottom: 12px;
+            color: #fff;
+            font-size: 13px;
+            font-family: 'Inter', system-ui, sans-serif;
+        `;
+
+        const bannerTitle = document.createElement('div');
+        bannerTitle.style.cssText = 'font-weight:600; margin-bottom:6px;';
+        bannerTitle.textContent =
+            `⚠️ Similar entry found: "${similarEntry.comment || 'Untitled'}"`;
+
+        const toggleBtn = document.createElement('button');
+        toggleBtn.textContent = 'Show Comparison ▼';
+        toggleBtn.style.cssText = `
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.4);
+            border-radius: 4px;
+            color: #fff;
+            cursor: pointer;
+            font-size: 12px;
+            padding: 3px 8px;
+            margin-top: 2px;
+        `;
+
+        // Comparison panel — hidden by default
+        const comparisonPanel = document.createElement('div');
+        comparisonPanel.id = 'le-comparison-panel';
+        comparisonPanel.style.cssText = 'display:none; margin-top:10px;';
+
+        // Helper to create a comparison row
+        function makeCompareRow(label, existingVal, newFieldId) {
+            const row = document.createElement('div');
+            row.style.cssText = `
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+                margin-bottom: 10px;
+            `;
+            row.innerHTML = `
+                <div>
+                    <div style="font-size:11px; opacity:0.7; margin-bottom:3px;">
+                        EXISTING — ${label}
+                    </div>
+                    <div style="
+                        background: rgba(0,0,0,0.3);
+                        border-radius: 4px;
+                        padding: 6px 8px;
+                        font-size: 12px;
+                        white-space: pre-wrap;
+                        word-break: break-word;
+                        max-height: 120px;
+                        overflow-y: auto;
+                    ">${escapeHtml(existingVal)}</div>
+                </div>
+                <div>
+                    <div style="font-size:11px; opacity:0.7; margin-bottom:3px;">
+                        NEW — ${label}
+                    </div>
+                    <div style="
+                        background: rgba(0,0,0,0.2);
+                        border-radius: 4px;
+                        padding: 6px 8px;
+                        font-size: 12px;
+                        white-space: pre-wrap;
+                        word-break: break-word;
+                        max-height: 120px;
+                        overflow-y: auto;
+                    ">${escapeHtml(document.getElementById(newFieldId)?.value ?? '')}</div>
+                </div>
+            `;
+            return row;
+        }
+
+        // LLM Merge button
+        const mergeBtn = document.createElement('button');
+        mergeBtn.textContent = '🤖 LLM Merge';
+        mergeBtn.style.cssText = `
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.4);
+            border-radius: 4px;
+            color: #fff;
+            cursor: pointer;
+            font-size: 12px;
+            padding: 4px 10px;
+            margin-top: 8px;
+        `;
+
+        // Proposed merge area — hidden until LLM responds
+        const proposedArea = document.createElement('div');
+        proposedArea.id = 'le-proposed-merge';
+        proposedArea.style.cssText = 'display:none; margin-top:10px;';
+        proposedArea.innerHTML = `
+            <div style="font-size:11px; opacity:0.7; margin-bottom:4px;">
+                PROPOSED MERGE — review before accepting
+            </div>
+            <div style="margin-bottom:6px;">
+                <label style="font-size:11px;">Title</label>
+                <input type="text" id="le-merge-title" style="
+                    width:100%; box-sizing:border-box;
+                    background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.2);
+                    border-radius:4px; color:#fff; padding:4px 6px; font-size:12px;
+                ">
+            </div>
+            <div style="margin-bottom:6px;">
+                <label style="font-size:11px;">Keywords</label>
+                <input type="text" id="le-merge-keywords" style="
+                    width:100%; box-sizing:border-box;
+                    background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.2);
+                    border-radius:4px; color:#fff; padding:4px 6px; font-size:12px;
+                ">
+            </div>
+            <div style="margin-bottom:6px;">
+                <label style="font-size:11px;">Content</label>
+                <textarea id="le-merge-content" rows="5" style="
+                    width:100%; box-sizing:border-box;
+                    background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.2);
+                    border-radius:4px; color:#fff; padding:4px 6px; font-size:12px;
+                    resize:vertical;
+                "></textarea>
+            </div>
+            <button id="le-accept-merge" style="
+                background:#4a9eff; border:none; border-radius:4px;
+                color:#fff; cursor:pointer; font-size:12px; padding:5px 12px;
+            ">✅ Accept Merge & Save</button>
+        `;
+
+        mergeBtn.onclick = async () => {
+            mergeBtn.disabled = true;
+            mergeBtn.textContent = '⏳ Merging...';
+            try {
+                const currentDraft = {
+                    title:    document.getElementById('le-title')?.value    || '',
+                    keywords: (document.getElementById('le-keywords')?.value || '')
+                                  .split(',').map(k => k.trim()).filter(Boolean),
+                    content:  document.getElementById('le-content')?.value  || '',
+                };
+                const merged = await generateMergedEntry(similarEntry, currentDraft);
+                if (merged) {
+                    document.getElementById('le-merge-title').value    = merged.title;
+                    document.getElementById('le-merge-keywords').value = merged.keywords.join(', ');
+                    document.getElementById('le-merge-content').value  = merged.content;
+                    proposedArea.style.display = 'block';
+                } else {
+                    toastr.error('LLM merge failed. Try again.');
+                }
+            } catch (e) {
+                toastr.error('Merge error. Please try again.');
+            } finally {
+                mergeBtn.disabled = false;
+                mergeBtn.textContent = '🤖 LLM Merge';
+            }
+        };
+
+        // Wire toggle button
+        toggleBtn.onclick = () => {
+            const isHidden = comparisonPanel.style.display === 'none';
+            comparisonPanel.style.display = isHidden ? 'block' : 'none';
+            toggleBtn.textContent = isHidden ? 'Hide Comparison ▲' : 'Show Comparison ▼';
+            if (isHidden) {
+                // Render comparison rows now (fields exist in DOM at this point)
+                comparisonPanel.innerHTML = '';
+                comparisonPanel.appendChild(
+                    makeCompareRow('Title',
+                        similarEntry.comment || '',
+                        'le-title')
+                );
+                comparisonPanel.appendChild(
+                    makeCompareRow('Keywords',
+                        (similarEntry.key || []).join(', '),
+                        'le-keywords')
+                );
+                comparisonPanel.appendChild(
+                    makeCompareRow('Content',
+                        similarEntry.content || '',
+                        'le-content')
+                );
+                comparisonPanel.appendChild(mergeBtn);
+                comparisonPanel.appendChild(proposedArea);
+            }
+        };
+
+        banner.appendChild(bannerTitle);
+        banner.appendChild(toggleBtn);
+        banner.appendChild(comparisonPanel);
+        modal.appendChild(banner);
+    }
     
     // Title field
     const titleGroup = document.createElement('div');
@@ -417,17 +733,58 @@ function showReviewModal(draft, selectedText, messageContext) {
             overlay.remove();
         }
     });
-}
 
-/**
- * Escapes HTML special characters
- * @param {string} text - The text to escape
- * @returns {string} - Escaped text
- */
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    // Accept Merge & Save button handler
+    overlay.addEventListener('click', async (e) => {
+        if (e.target.id !== 'le-accept-merge') return;
+
+        const confirmed = confirm(
+            `This will overwrite the existing entry "${similarEntry.comment || 'Untitled'}" with the merged version. Continue?`
+        );
+        if (!confirmed) return;
+
+        const mergedTitle    = document.getElementById('le-merge-title')?.value.trim()    || '';
+        const mergedKeywords = (document.getElementById('le-merge-keywords')?.value || '')
+                                   .split(',').map(k => k.trim()).filter(Boolean);
+        const mergedContent  = document.getElementById('le-merge-content')?.value.trim()  || '';
+        const lorebookName   = document.getElementById('le-lorebook')?.value               || '';
+
+        if (!mergedTitle || !mergedContent || !lorebookName) {
+            toastr.error('Merged entry is incomplete.');
+            return;
+        }
+
+        try {
+            const book = await loadWorldInfo(lorebookName);
+            if (!book?.entries) {
+                toastr.error('Could not load lorebook.');
+                return;
+            }
+
+            // Find the existing entry by uid and overwrite its fields
+            const existingUid = similarEntry.uid;
+            const target = Object.values(book.entries)
+                               .find(e => e.uid === existingUid);
+            if (!target) {
+                toastr.error('Original entry no longer exists in lorebook.');
+                return;
+            }
+
+            target.comment         = mergedTitle;
+            target.key             = mergedKeywords;
+            target.keysecondary    = target.keysecondary || [];
+            target.content         = mergedContent;
+
+            await saveWorldInfo(lorebookName, book, true);
+            await reloadEditor(lorebookName);
+
+            toastr.success(`Merged entry saved to ${lorebookName}`);
+            overlay.remove();
+        } catch (err) {
+            console.error('SillyTavern-Scribe!: Accept merge failed:', err);
+            toastr.error('Failed to save merged entry.');
+        }
+    });
 }
 
 /**
@@ -666,7 +1023,7 @@ console.log('SillyTavern-Scribe!: Extension loaded');
             const parsed = parseLoreResponse(response);
             
             if (parsed) {
-                showReviewModal(parsed, selectedText, messageContext);
+                await showReviewModal(parsed, selectedText, messageContext);
             } else {
                 toastr.error('Failed to parse the generated lore entry. Please try again.');
             }
