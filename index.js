@@ -551,6 +551,54 @@ async function showReviewModal(draft, selectedText, messageContext) {
         dialog.remove();
     }
 
+    function makeFieldRow(labelText, inputHtml, fieldId, onRegen) {
+        const wrap = document.createElement('div');
+
+        const labelRow = document.createElement('div');
+        labelRow.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;';
+
+        const label = document.createElement('label');
+        label.setAttribute('for', fieldId);
+        label.textContent = labelText;
+        label.style.cssText = 'font-size:13px;';
+
+        const regenFieldBtn = document.createElement('button');
+        regenFieldBtn.textContent = '↺';
+        regenFieldBtn.title = `Regenerate ${labelText} only`;
+        regenFieldBtn.style.cssText = `
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 4px;
+            color: var(--SmartThemeBodyColor);
+            cursor: pointer;
+            font-size: 12px;
+            padding: 1px 7px;
+            line-height: 1.6;
+        `;
+
+        regenFieldBtn.addEventListener('click', async () => {
+            regenFieldBtn.disabled = true;
+            regenFieldBtn.textContent = '⏳';
+            console.log('[Scribe] Per-field regen clicked:', fieldId);
+            try {
+                await onRegen();
+            } finally {
+                regenFieldBtn.disabled = false;
+                regenFieldBtn.textContent = '↺';
+            }
+        });
+
+        labelRow.appendChild(label);
+        labelRow.appendChild(regenFieldBtn);
+
+        const fieldContainer = document.createElement('div');
+        fieldContainer.innerHTML = inputHtml;
+
+        wrap.appendChild(labelRow);
+        wrap.appendChild(fieldContainer);
+        return wrap;
+    }
+
     // Close when clicking the backdrop (dialog element itself)
     dialog.addEventListener('click', (e) => {
         if (e.target === dialog) closeModal();
@@ -700,31 +748,189 @@ async function showReviewModal(draft, selectedText, messageContext) {
     }
 
     // --- Title field ---
-    const titleGroup = document.createElement('div');
-    titleGroup.innerHTML = `
-        <label for="le-title">Title</label>
-        <input type="text" id="le-title" class="text_pole"
-            value="${escapeHtml(draft.title)}">
-    `;
+    const titleGroup = makeFieldRow(
+        'Title',
+        `<input type="text" id="le-title" class="text_pole" value="${escapeHtml(draft.title)}">`,
+        'le-title',
+        async () => {
+            const currentDraft = {
+                title:    content.querySelector('#le-title')?.value    || '',
+                keywords: (content.querySelector('#le-keywords')?.value || '')
+                              .split(',').map(k => k.trim()).filter(Boolean),
+                content:  content.querySelector('#le-content')?.value  || '',
+            };
+            const result = await generateSingleField(
+                'title', selectedText, messageContext, currentDraft);
+            if (result?.title) {
+                content.querySelector('#le-title').value = result.title;
+                console.log('[Scribe] Title updated:', result.title);
+            } else {
+                toastr.error('Could not regenerate title. Try again.');
+            }
+        }
+    );
     content.appendChild(titleGroup);
 
     // --- Keywords field ---
-    const keywordsGroup = document.createElement('div');
-    keywordsGroup.innerHTML = `
-        <label for="le-keywords">Keywords (comma-separated)</label>
-        <input type="text" id="le-keywords" class="text_pole"
-            value="${escapeHtml(draft.keywords.join(', '))}">
-    `;
+    const keywordsGroup = makeFieldRow(
+        'Keywords (comma-separated)',
+        `<input type="text" id="le-keywords" class="text_pole" value="${escapeHtml(draft.keywords.join(', '))}">`,
+        'le-keywords',
+        async () => {
+            const currentDraft = {
+                title:    content.querySelector('#le-title')?.value    || '',
+                keywords: (content.querySelector('#le-keywords')?.value || '')
+                              .split(',').map(k => k.trim()).filter(Boolean),
+                content:  content.querySelector('#le-content')?.value  || '',
+            };
+            const result = await generateSingleField(
+                'keywords', selectedText, messageContext, currentDraft);
+            if (result?.keywords) {
+                const kwString = Array.isArray(result.keywords)
+                    ? result.keywords.join(', ')
+                    : String(result.keywords);
+                content.querySelector('#le-keywords').value = kwString;
+                console.log('[Scribe] Keywords updated:', kwString);
+            } else {
+                toastr.error('Could not regenerate keywords. Try again.');
+            }
+        }
+    );
     content.appendChild(keywordsGroup);
 
     // --- Content field ---
-    const contentGroup = document.createElement('div');
-    contentGroup.innerHTML = `
-        <label for="le-content">Lore Content</label>
-        <textarea id="le-content" class="text_pole"
-            rows="6">${escapeHtml(draft.content)}</textarea>
-    `;
+    const contentGroup = makeFieldRow(
+        'Lore Content',
+        `<textarea id="le-content" class="text_pole" rows="6">${escapeHtml(draft.content)}</textarea>`,
+        'le-content',
+        async () => {
+            const currentDraft = {
+                title:    content.querySelector('#le-title')?.value    || '',
+                keywords: (content.querySelector('#le-keywords')?.value || '')
+                              .split(',').map(k => k.trim()).filter(Boolean),
+                content:  content.querySelector('#le-content')?.value  || '',
+            };
+            const result = await generateSingleField(
+                'content', selectedText, messageContext, currentDraft);
+            if (result?.content) {
+                content.querySelector('#le-content').value = result.content;
+                updateTokenCount();
+                console.log('[Scribe] Content updated, length:', result.content.length);
+            } else {
+                toastr.error('Could not regenerate content. Try again.');
+            }
+        }
+    );
     content.appendChild(contentGroup);
+
+    // --- Token counter ---
+    const tokenCounter = document.createElement('div');
+    tokenCounter.id = 'le-token-counter';
+    tokenCounter.style.cssText = `
+        font-size: 11px;
+        opacity: 0.6;
+        text-align: right;
+        margin-top: -4px;
+    `;
+
+    function updateTokenCount() {
+        const text = content.querySelector('#le-content')?.value || '';
+        const estimated = Math.ceil(text.length / 4);
+        tokenCounter.textContent = `~${estimated} tokens`;
+    }
+
+    // Initial count on modal open
+    updateTokenCount();
+
+    // Update live as user types in content field
+    content.addEventListener('input', (e) => {
+        if (e.target.id === 'le-content') updateTokenCount();
+    });
+
+    content.appendChild(tokenCounter);
+    console.log('[Scribe] Token counter initialized');
+
+    // --- Prompt preview ---
+    const previewGroup = document.createElement('div');
+
+    const previewToggle = document.createElement('button');
+    previewToggle.textContent = '🔍 Preview Full Prompt ▼';
+    previewToggle.style.cssText = `
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.15);
+        border-radius: 4px;
+        color: var(--SmartThemeBodyColor);
+        cursor: pointer;
+        font-size: 11px;
+        padding: 3px 8px;
+        width: 100%;
+        text-align: left;
+        opacity: 0.7;
+    `;
+
+    const previewPanel = document.createElement('div');
+    previewPanel.style.cssText = 'display:none; margin-top:6px;';
+
+    const previewText = document.createElement('textarea');
+    previewText.readOnly = true;
+    previewText.rows = 8;
+    previewText.style.cssText = `
+        width: 100%;
+        box-sizing: border-box;
+        font-size: 11px;
+        opacity: 0.7;
+        resize: vertical;
+        background: rgba(0,0,0,0.2);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 4px;
+        color: var(--SmartThemeBodyColor);
+        padding: 6px 8px;
+        font-family: monospace;
+    `;
+
+    const previewTokenCount = document.createElement('div');
+    previewTokenCount.style.cssText = `
+        font-size: 11px;
+        opacity: 0.5;
+        text-align: right;
+        margin-top: 3px;
+    `;
+
+    previewToggle.addEventListener('click', async () => {
+        const isHidden = previewPanel.style.display === 'none';
+        previewPanel.style.display = isHidden ? 'block' : 'none';
+        previewToggle.textContent = isHidden
+            ? '🔍 Preview Full Prompt ▲'
+            : '🔍 Preview Full Prompt ▼';
+
+        if (isHidden) {
+            console.log('[Scribe] Building prompt preview...');
+            const additionalCtx = await buildContextSections();
+            const sysPrompt     = getSystemPrompt();
+            const lengthInstr   = getLengthInstruction();
+
+            const previewPrompt = `${sysPrompt}
+
+LENGTH CONSTRAINT: ${lengthInstr}
+
+OUTPUT FORMAT — return exactly this structure, no other text:
+{"title": "...", "keywords": ["...", "..."], "content": "..."}
+${additionalCtx ? `\nCONTEXT:\n${additionalCtx}\n` : ''}
+SUBJECT: ${selectedText}
+SURROUNDING CONTEXT: ${messageContext}`;
+
+            previewText.value = previewPrompt;
+            const estimated = Math.ceil(previewPrompt.length / 4);
+            previewTokenCount.textContent = `~${estimated} tokens`;
+            console.log('[Scribe] Prompt preview ready, estimated tokens:', estimated);
+        }
+    });
+
+    previewPanel.appendChild(previewText);
+    previewPanel.appendChild(previewTokenCount);
+    previewGroup.appendChild(previewToggle);
+    previewGroup.appendChild(previewPanel);
+    content.appendChild(previewGroup);
 
     // --- Lorebook selector ---
     const savedLorebook = extension_settings['SillyTavern-Scribe']?.selectedLorebook || '';
@@ -830,6 +1036,7 @@ async function showReviewModal(draft, selectedText, messageContext) {
                 document.getElementById('le-title').value    = parsed.title;
                 document.getElementById('le-keywords').value = parsed.keywords.join(', ');
                 document.getElementById('le-content').value  = parsed.content;
+                updateTokenCount();
             } else {
                 toastr.error('Failed to parse regenerated entry. Try again.');
             }
