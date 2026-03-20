@@ -448,6 +448,79 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+async function generateSingleField(field, selectedText, messageContext, currentDraft) {
+    console.log('[Scribe] Regenerating single field:', field);
+
+    const systemPrompt  = getSystemPrompt();
+    const lengthInstr   = getLengthInstruction();
+
+    const fieldInstructions = {
+        title:    `Based on the context below, generate ONLY a new "title" value for this lorebook entry.
+Output ONLY a raw JSON object with a single field: {"title": "..."}`,
+        keywords: `Based on the context below, generate ONLY a new "keywords" array for this lorebook entry.
+Output ONLY a raw JSON object with a single field: {"keywords": ["...", "..."]}
+Use 2-5 lowercase trigger words.`,
+        content:  `Based on the context below, generate ONLY a new "content" value for this lorebook entry.
+Output ONLY a raw JSON object with a single field: {"content": "..."}
+${lengthInstr}`,
+    };
+
+    const prompt = `${systemPrompt}
+
+${fieldInstructions[field]}
+
+CURRENT ENTRY STATE:
+Title: ${currentDraft.title}
+Keywords: ${currentDraft.keywords.join(', ')}
+Content: ${currentDraft.content}
+
+SUBJECT: ${selectedText}
+SURROUNDING CONTEXT: ${messageContext}`;
+
+    console.log('[Scribe] Single field prompt assembled for:', field);
+    console.log('[Scribe] Single field prompt:\n', prompt);
+
+    const selectedProfile = extension_settings['SillyTavern-Scribe']?.selectedProfile;
+    let response = null;
+
+    if (selectedProfile) {
+        response = await sendWithProfile(selectedProfile, prompt);
+    }
+    if (!response) {
+        const ctx = SillyTavern.getContext();
+        response = await ctx.generateQuietPrompt({ quietPrompt: prompt });
+    }
+
+    const trimmed = (response || '').trim();
+    if (!trimmed) {
+        console.warn('[Scribe] Empty response for single field:', field);
+        return null;
+    }
+
+    console.log('[Scribe] Single field raw response:', trimmed);
+
+    // Parse permissively — only need one field
+    try {
+        let cleaned = trimmed;
+        cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+        cleaned = cleaned.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
+        cleaned = cleaned.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '').trim();
+        cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+            console.warn('[Scribe] No JSON found in single field response');
+            return null;
+        }
+        cleaned = jsonMatch[0].replace(/,\s*([}\]])/g, '$1');
+        const parsed = JSON.parse(cleaned);
+        console.log('[Scribe] Single field parsed result:', parsed);
+        return parsed;
+    } catch (e) {
+        console.error('[Scribe] Failed to parse single field response:', e);
+        return null;
+    }
+}
+
 /**
  * Shows the review modal for editing the generated lore entry
  * @param {{title: string, keywords: string[], content: string}} draft - The generated draft
