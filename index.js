@@ -383,7 +383,6 @@ async function showReviewModal(draft, selectedText, messageContext) {
     // Create modal
     const modal = document.createElement('div');
     modal.className = 'le-modal';
-    modal.style.cssText = 'max-height: 85vh; overflow-y: auto;';
 
     // Duplicate warning banner (only shown when a match is found)
     if (similarEntry) {

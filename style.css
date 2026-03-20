@@ -20,24 +20,27 @@
 .le-modal-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.6);
-    z-index: 10000;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 9999;
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 16px;
+    box-sizing: border-box;
+    overflow-y: auto;
 }
+
 .le-modal {
-    background: var(--SmartThemeBlurTintColor);
-    border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 10px;
-    padding: 24px;
-    width: 480px;
-    max-width: 95vw;
-    font-family: 'Inter', system-ui, sans-serif;
-    color: var(--SmartThemeBodyColor);
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+    background: var(--SmartThemeBlurTintColor, #1a1a2e);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    padding: 20px;
+    width: 100%;
+    max-width: 560px;
+    max-height: 85vh;
+    overflow-y: auto;
+    box-sizing: border-box;
+    position: relative;
 }
 .le-modal label {
     font-size: 12px;
