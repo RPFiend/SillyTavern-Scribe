@@ -17,3 +17,31 @@
     background: var(--SmartThemeBlurTintColor);
     border-color: rgba(255,255,255,0.4);
 }
+
+#le-scribe-dialog {
+    border: none;
+    padding: 0;
+    background: transparent;
+    max-width: 100vw;
+    max-height: 100dvh;
+    overflow: visible;
+}
+
+#le-scribe-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.7);
+}
+
+.le-modal {
+    background: var(--SmartThemeBlurTintColor, #1a1a2e);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    padding: 20px;
+    width: 90vw;
+    max-width: 560px;
+    max-height: 85dvh;
+    overflow-y: auto;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}

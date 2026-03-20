@@ -364,17 +364,31 @@ function escapeHtml(text) {
 async function showReviewModal(draft, selectedText, messageContext) {
     console.log('SillyTavern-Scribe!: Showing review modal with draft:', draft);
 
-    const { Popup, POPUP_TYPE } = SillyTavern.getContext();
+    // Remove any existing dialog
+    document.getElementById('le-scribe-dialog')?.remove();
 
-    // Check for duplicates in the currently selected lorebook
+    // Check for duplicates
     const currentLorebook = extension_settings['SillyTavern-Scribe']?.selectedLorebook || '';
     const similarEntry = currentLorebook
         ? await findSimilarEntry(currentLorebook, draft)
         : null;
 
-    // Build the content container — this is what Popup wraps
+    // Create native dialog + inner modal container
+    const dialog = document.createElement('dialog');
+    dialog.id = 'le-scribe-dialog';
+
     const content = document.createElement('div');
-    content.style.cssText = 'display:flex; flex-direction:column; gap:12px; min-width:300px;';
+    content.className = 'le-modal';
+
+    function closeModal() {
+        dialog.close();
+        dialog.remove();
+    }
+
+    // Close when clicking the backdrop (dialog element itself)
+    dialog.addEventListener('click', (e) => {
+        if (e.target === dialog) closeModal();
+    });
 
     // --- Duplicate warning banner ---
     if (similarEntry) {
@@ -435,27 +449,25 @@ async function showReviewModal(draft, selectedText, messageContext) {
         proposedArea.id = 'le-proposed-merge';
         proposedArea.style.cssText = 'display:none; margin-top:10px;';
         proposedArea.innerHTML = `
-            <div style="font-size:11px;opacity:0.7;margin-bottom:4px;">PROPOSED MERGE — review before accepting</div>
+            <div style="font-size:11px;opacity:0.7;margin-bottom:4px;">
+                PROPOSED MERGE — review before accepting
+            </div>
             <div style="margin-bottom:6px;">
                 <label style="font-size:11px;">Title</label>
-                <input type="text" id="le-merge-title" style="width:100%;box-sizing:border-box;
-                    background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.2);
-                    border-radius:4px;color:#fff;padding:4px 6px;font-size:12px;">
+                <input type="text" id="le-merge-title" class="text_pole"
+                    style="width:100%;box-sizing:border-box;">
             </div>
             <div style="margin-bottom:6px;">
                 <label style="font-size:11px;">Keywords</label>
-                <input type="text" id="le-merge-keywords" style="width:100%;box-sizing:border-box;
-                    background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.2);
-                    border-radius:4px;color:#fff;padding:4px 6px;font-size:12px;">
+                <input type="text" id="le-merge-keywords" class="text_pole"
+                    style="width:100%;box-sizing:border-box;">
             </div>
             <div style="margin-bottom:6px;">
                 <label style="font-size:11px;">Content</label>
-                <textarea id="le-merge-content" rows="5" style="width:100%;box-sizing:border-box;
-                    background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.2);
-                    border-radius:4px;color:#fff;padding:4px 6px;font-size:12px;resize:vertical;"></textarea>
+                <textarea id="le-merge-content" class="text_pole" rows="5"
+                    style="width:100%;box-sizing:border-box;resize:vertical;"></textarea>
             </div>
-            <button id="le-accept-merge" style="background:#4a9eff;border:none;border-radius:4px;
-                color:#fff;cursor:pointer;font-size:12px;padding:5px 12px;">✅ Accept Merge & Save</button>
+            <button id="le-accept-merge" class="menu_button">✅ Accept Merge & Save</button>
         `;
 
         mergeBtn.onclick = async () => {
@@ -491,9 +503,12 @@ async function showReviewModal(draft, selectedText, messageContext) {
             toggleBtn.textContent = isHidden ? 'Hide Comparison ▲' : 'Show Comparison ▼';
             if (isHidden) {
                 comparisonPanel.innerHTML = '';
-                comparisonPanel.appendChild(makeCompareRow('Title',    similarEntry.comment || '',                     'le-title'));
-                comparisonPanel.appendChild(makeCompareRow('Keywords', (similarEntry.key || []).join(', '),            'le-keywords'));
-                comparisonPanel.appendChild(makeCompareRow('Content',  similarEntry.content || '',                     'le-content'));
+                comparisonPanel.appendChild(makeCompareRow('Title',
+                    similarEntry.comment || '', 'le-title'));
+                comparisonPanel.appendChild(makeCompareRow('Keywords',
+                    (similarEntry.key || []).join(', '), 'le-keywords'));
+                comparisonPanel.appendChild(makeCompareRow('Content',
+                    similarEntry.content || '', 'le-content'));
                 comparisonPanel.appendChild(mergeBtn);
                 comparisonPanel.appendChild(proposedArea);
 
@@ -522,7 +537,8 @@ async function showReviewModal(draft, selectedText, messageContext) {
     const titleGroup = document.createElement('div');
     titleGroup.innerHTML = `
         <label for="le-title">Title</label>
-        <input type="text" id="le-title" class="text_pole" value="${escapeHtml(draft.title)}">
+        <input type="text" id="le-title" class="text_pole"
+            value="${escapeHtml(draft.title)}">
     `;
     content.appendChild(titleGroup);
 
@@ -530,7 +546,8 @@ async function showReviewModal(draft, selectedText, messageContext) {
     const keywordsGroup = document.createElement('div');
     keywordsGroup.innerHTML = `
         <label for="le-keywords">Keywords (comma-separated)</label>
-        <input type="text" id="le-keywords" class="text_pole" value="${escapeHtml(draft.keywords.join(', '))}">
+        <input type="text" id="le-keywords" class="text_pole"
+            value="${escapeHtml(draft.keywords.join(', '))}">
     `;
     content.appendChild(keywordsGroup);
 
@@ -538,7 +555,8 @@ async function showReviewModal(draft, selectedText, messageContext) {
     const contentGroup = document.createElement('div');
     contentGroup.innerHTML = `
         <label for="le-content">Lore Content</label>
-        <textarea id="le-content" class="text_pole" rows="6">${escapeHtml(draft.content)}</textarea>
+        <textarea id="le-content" class="text_pole"
+            rows="6">${escapeHtml(draft.content)}</textarea>
     `;
     content.appendChild(contentGroup);
 
@@ -573,6 +591,11 @@ async function showReviewModal(draft, selectedText, messageContext) {
     const buttonsDiv = document.createElement('div');
     buttonsDiv.style.cssText = 'display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap;';
 
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.classList.add('menu_button');
+    cancelBtn.onclick = () => closeModal();
+
     const regenBtn = document.createElement('button');
     regenBtn.textContent = '🔄 Regenerate';
     regenBtn.classList.add('menu_button');
@@ -581,7 +604,8 @@ async function showReviewModal(draft, selectedText, messageContext) {
         regenBtn.disabled = true;
         regenBtn.textContent = '⏳ Regenerating...';
         try {
-            const response = await generateLoreEntry(selectedText, messageContext, revisionInstructions);
+            const response = await generateLoreEntry(
+                selectedText, messageContext, revisionInstructions);
             const parsed = parseLoreResponse(response);
             if (parsed) {
                 document.getElementById('le-title').value    = parsed.title;
@@ -603,13 +627,19 @@ async function showReviewModal(draft, selectedText, messageContext) {
     saveBtn.textContent = 'Save';
     saveBtn.classList.add('menu_button');
     saveBtn.onclick = async () => {
-        const title       = document.getElementById('le-title').value.trim();
-        const keywordsStr = document.getElementById('le-keywords').value.trim();
-        const content_val = document.getElementById('le-content').value.trim();
-        const lorebookName= document.getElementById('le-lorebook').value;
+        const title        = document.getElementById('le-title').value.trim();
+        const keywordsStr  = document.getElementById('le-keywords').value.trim();
+        const content_val  = document.getElementById('le-content').value.trim();
+        const lorebookName = document.getElementById('le-lorebook').value;
 
-        if (!title || !content_val) { toastr.error('Title and content are required'); return; }
-        if (!lorebookName)          { toastr.error('Please select a lorebook');        return; }
+        if (!title || !content_val) {
+            toastr.error('Title and content are required');
+            return;
+        }
+        if (!lorebookName) {
+            toastr.error('Please select a lorebook');
+            return;
+        }
 
         const keywords = keywordsStr
             ? keywordsStr.split(',').map(k => k.trim()).filter(k => k)
@@ -617,24 +647,25 @@ async function showReviewModal(draft, selectedText, messageContext) {
 
         await saveLoreEntry(lorebookName, title, keywords, content_val);
 
-        if (!extension_settings['SillyTavern-Scribe']) extension_settings['SillyTavern-Scribe'] = {};
+        if (!extension_settings['SillyTavern-Scribe']) {
+            extension_settings['SillyTavern-Scribe'] = {};
+        }
         extension_settings['SillyTavern-Scribe'].selectedLorebook = lorebookName;
         saveSettingsDebounced();
-
-        popup.complete(0);
+        closeModal();
     };
 
+    buttonsDiv.appendChild(cancelBtn);
     buttonsDiv.appendChild(regenBtn);
     buttonsDiv.appendChild(saveBtn);
     content.appendChild(buttonsDiv);
 
-    // --- Accept Merge button handler (delegated) ---
+    // --- Accept Merge handler ---
     content.addEventListener('click', async (e) => {
         if (e.target.id !== 'le-accept-merge') return;
 
-        const confirmed = await Popup.show.confirm(
-            'Overwrite existing entry?',
-            `This will overwrite "${similarEntry.comment || 'Untitled'}" with the merged version.`
+        const confirmed = confirm(
+            `Overwrite "${similarEntry.comment || 'Untitled'}" with the merged version?`
         );
         if (!confirmed) return;
 
@@ -653,7 +684,8 @@ async function showReviewModal(draft, selectedText, messageContext) {
             const book = await loadWorldInfo(lorebookName);
             if (!book?.entries) { toastr.error('Could not load lorebook.'); return; }
 
-            const target = Object.values(book.entries).find(e => e.uid === similarEntry.uid);
+            const target = Object.values(book.entries)
+                .find(e => e.uid === similarEntry.uid);
             if (!target) { toastr.error('Original entry no longer exists.'); return; }
 
             target.comment      = mergedTitle;
@@ -664,16 +696,17 @@ async function showReviewModal(draft, selectedText, messageContext) {
             await saveWorldInfo(lorebookName, book, true);
             await reloadEditor(lorebookName);
             toastr.success(`Merged entry saved to ${lorebookName}`);
-            popup.complete(0);
+            closeModal();
         } catch (err) {
             console.error('SillyTavern-Scribe!: Accept merge failed:', err);
             toastr.error('Failed to save merged entry.');
         }
     });
 
-    // --- Show via ST's Popup class ---
-    const popup = new Popup(content, POPUP_TYPE.TEXT, '', { wide: true, allowVerticalScrolling: true });
-    await popup.show();
+    // Mount and open via top-layer showModal()
+    dialog.appendChild(content);
+    document.body.appendChild(dialog);
+    dialog.showModal();
 }
 
 /**
