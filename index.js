@@ -6,6 +6,9 @@ const defaultSettings = {
     includeCharCard: true,
     includeAuthorNote: false,
     includeLorebook: false,
+    customSystemPrompt: '',
+    contentLength: 'standard',
+    customTokenCount: 150,
 };
 
 // Stores the active selection so mobile taps don't lose it
@@ -161,6 +164,38 @@ async function buildContextSections() {
     return sections.join('\n\n');
 }
 
+function getSystemPrompt() {
+    const custom = extension_settings['SillyTavern-Scribe']?.customSystemPrompt?.trim();
+    if (custom) {
+        console.log('[Scribe] Using custom system prompt');
+        return custom;
+    }
+    console.log('[Scribe] Using default system prompt');
+    return `You are a lore assistant. Your only job is to write lorebook entries.
+Output ONLY a raw JSON object. No preamble, no explanation, no markdown fences.
+The JSON must have exactly these three fields:
+  "title": a short name for the entry subject
+  "keywords": an array of 2-5 lowercase trigger words
+  "content": a third-person lore description`;
+}
+
+function getLengthInstruction() {
+    const settings = extension_settings['SillyTavern-Scribe'] ?? {};
+    const length = settings.contentLength || 'standard';
+
+    const map = {
+        brief:     'Write the content field in no more than 50 tokens.',
+        standard:  'Write the content field in no more than 150 tokens.',
+        detailed:  'Write the content field in no more than 300 tokens.',
+        extensive: 'Write the content field in no more than 500 tokens.',
+        custom:    `Write the content field in no more than ${settings.customTokenCount || 150} tokens.`,
+    };
+
+    const instruction = map[length] || map.standard;
+    console.log('[Scribe] Length instruction:', instruction);
+    return instruction;
+}
+
 /**
  * Generates a lorebook entry using the LLM
  * @param {string} selectedText - The text selected by the user
@@ -170,23 +205,28 @@ async function buildContextSections() {
  */
 async function generateLoreEntry(selectedText, messageContext, revisionInstructions = '') {
     const selectedProfile = extension_settings['SillyTavern-Scribe']?.selectedProfile;
-    console.log('SillyTavern-Scribe!: Sending request to LLM');
-    console.log('SillyTavern-Scribe!: Selected text:', selectedText);
-    console.log('SillyTavern-Scribe!: Message context:', messageContext);
-    console.log('SillyTavern-Scribe!: Using profile:', selectedProfile || 'Default (Chat)');
+    console.log('[Scribe] Sending request to LLM');
+    console.log('[Scribe] Selected text:', selectedText);
+    console.log('[Scribe] Message context:', messageContext);
+    console.log('[Scribe] Using profile:', selectedProfile || 'Default (Chat)');
 
+    const systemPrompt   = getSystemPrompt();
+    const lengthInstr    = getLengthInstruction();
     const additionalContext = await buildContextSections();
 
-    const prompt = `You are a lore assistant. Based on the text below, write a lorebook entry for the entity or concept described.
-Return ONLY valid JSON in this exact format, no other text:
-{
-  "title": "Entity name",
-  "keywords": ["keyword1", "keyword2", "keyword3"],
-  "content": "Third-person lore description of the entity."
-}
-${additionalContext ? `\n${additionalContext}\n` : ''}
-Selected text: ${selectedText}
-Message context: ${messageContext}${revisionInstructions ? `\nRevision instructions: ${revisionInstructions}` : ''}`;
+    const prompt = `${systemPrompt}
+
+LENGTH CONSTRAINT: ${lengthInstr}
+
+OUTPUT FORMAT — return exactly this structure, no other text:
+{"title": "...", "keywords": ["...", "..."], "content": "..."}
+${additionalContext ? `\nCONTEXT:\n${additionalContext}\n` : ''}
+SUBJECT (the text the user highlighted): ${selectedText}
+SURROUNDING CONTEXT: ${messageContext}${revisionInstructions ? `\nREVISION INSTRUCTIONS: ${revisionInstructions}` : ''}`;
+
+    console.log('[Scribe] Assembled prompt length (chars):', prompt.length);
+    console.log('[Scribe] Estimated tokens:', Math.ceil(prompt.length / 4));
+    console.log('[Scribe] Full prompt:\n', prompt);
 
     // Try to use a connection profile if one is selected
     if (selectedProfile) {
@@ -631,6 +671,56 @@ async function showReviewModal(draft, selectedText, messageContext) {
     `;
     content.appendChild(lorebookGroup);
 
+    // --- Length control ---
+    const savedLength      = extension_settings['SillyTavern-Scribe']?.contentLength || 'standard';
+    const savedCustomCount = extension_settings['SillyTavern-Scribe']?.customTokenCount || 150;
+
+    const lengthGroup = document.createElement('div');
+    lengthGroup.innerHTML = `
+        <label for="le-length-select">Entry Length</label>
+        <select id="le-length-select" class="text_pole">
+            <option value="brief"    ${savedLength === 'brief'     ? 'selected' : ''}>Brief (~50 tokens)</option>
+            <option value="standard" ${savedLength === 'standard'  ? 'selected' : ''}>Standard (~150 tokens)</option>
+            <option value="detailed" ${savedLength === 'detailed'  ? 'selected' : ''}>Detailed (~300 tokens)</option>
+            <option value="extensive"${savedLength === 'extensive' ? 'selected' : ''}>Extensive (~500 tokens)</option>
+            <option value="custom"   ${savedLength === 'custom'    ? 'selected' : ''}>Custom</option>
+        </select>
+        <div id="le-custom-token-wrap" style="margin-top:6px; display:${savedLength === 'custom' ? 'flex' : 'none'}; align-items:center; gap:8px;">
+            <input type="number" id="le-custom-token-count" class="text_pole"
+                min="10" max="2000" step="10"
+                value="${savedCustomCount}"
+                style="width:90px;">
+            <span style="font-size:13px; opacity:0.8;">tokens</span>
+        </div>
+    `;
+    content.appendChild(lengthGroup);
+
+    // Wire length dropdown
+    const lengthSelect = document.getElementById('le-length-select');
+    const customWrap   = document.getElementById('le-custom-token-wrap');
+    const customInput  = document.getElementById('le-custom-token-count');
+
+    lengthSelect.addEventListener('change', () => {
+        const val = lengthSelect.value;
+        customWrap.style.display = val === 'custom' ? 'flex' : 'none';
+        if (!extension_settings['SillyTavern-Scribe']) {
+            extension_settings['SillyTavern-Scribe'] = {};
+        }
+        extension_settings['SillyTavern-Scribe'].contentLength = val;
+        saveSettingsDebounced();
+        console.log('[Scribe] Length setting changed to:', val);
+    });
+
+    customInput.addEventListener('input', () => {
+        const val = parseInt(customInput.value) || 150;
+        if (!extension_settings['SillyTavern-Scribe']) {
+            extension_settings['SillyTavern-Scribe'] = {};
+        }
+        extension_settings['SillyTavern-Scribe'].customTokenCount = val;
+        saveSettingsDebounced();
+        console.log('[Scribe] Custom token count changed to:', val);
+    });
+
     // --- Revision instructions ---
     const revisionGroup = document.createElement('div');
     revisionGroup.innerHTML = `
@@ -860,6 +950,20 @@ async function injectSettingsPanel() {
                 Include Active Lorebook
               </label>
             </div>
+
+            <hr style="opacity:0.2; margin:12px 0;">
+
+            <label for="scribe-system-prompt">Custom System Prompt</label>
+            <textarea id="scribe-system-prompt" class="text_pole" rows="5"
+                placeholder="Leave blank to use the default prompt. The default instructs the model to output only a JSON object with title, keywords, and content fields."></textarea>
+            <div style="display:flex; gap:8px; margin-top:6px;">
+                <button id="scribe-reset-prompt" class="menu_button" style="font-size:11px; padding:4px 10px;">
+                    ↺ Reset to Default
+                </button>
+            </div>
+            <small style="opacity:0.6; font-size:11px; margin-top:4px;">
+              Override the system instruction sent to the LLM. Leave blank for default.
+            </small>
           </div>
         </div>
       </div>
@@ -942,6 +1046,33 @@ async function injectSettingsPanel() {
         }
         extension_settings['SillyTavern-Scribe'].includeLorebook = $(this).prop('checked');
         saveSettingsDebounced();
+    });
+
+    // Restore saved custom system prompt
+    const savedCustomPrompt = extension_settings['SillyTavern-Scribe']?.customSystemPrompt || '';
+    $('#scribe-system-prompt').val(savedCustomPrompt);
+
+    // Save on change — debounced to avoid saving every keystroke
+    $('#scribe-system-prompt').on('input', function() {
+        if (!extension_settings['SillyTavern-Scribe']) {
+            extension_settings['SillyTavern-Scribe'] = {};
+        }
+        extension_settings['SillyTavern-Scribe'].customSystemPrompt = $(this).val().trim();
+        saveSettingsDebounced();
+        console.log('[Scribe] Custom system prompt updated, length:',
+            $(this).val().trim().length, 'chars');
+    });
+
+    // Reset to default button
+    $('#scribe-reset-prompt').on('click', function() {
+        $('#scribe-system-prompt').val('');
+        if (!extension_settings['SillyTavern-Scribe']) {
+            extension_settings['SillyTavern-Scribe'] = {};
+        }
+        extension_settings['SillyTavern-Scribe'].customSystemPrompt = '';
+        saveSettingsDebounced();
+        console.log('[Scribe] System prompt reset to default');
+        toastr.success('System prompt reset to default');
     });
 }
 
