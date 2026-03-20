@@ -271,8 +271,8 @@ async function findSimilarEntry(lorebookName, draft) {
             // Fuzzy title score (0–1)
             const titleScore = fuzzyScore(draftTitle, entryTitle);
 
-            // Must meet minimum threshold: 1+ keyword match OR title score >= 0.6
-            if (overlap === 0 && titleScore < 0.6) continue;
+            // Must meet minimum threshold: 1+ keyword match AND title score >= 0.6
+            if (overlap === 0 || titleScore < 0.6) continue;
 
             const combinedScore = overlap * 10 + titleScore;
             if (combinedScore > bestScore) {
