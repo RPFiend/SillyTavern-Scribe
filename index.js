@@ -364,59 +364,26 @@ function escapeHtml(text) {
 async function showReviewModal(draft, selectedText, messageContext) {
     console.log('SillyTavern-Scribe!: Showing review modal with draft:', draft);
 
+    const { Popup } = SillyTavern.getContext();
+
     // Check for duplicates in the currently selected lorebook
     const currentLorebook = extension_settings['SillyTavern-Scribe']?.selectedLorebook || '';
     const similarEntry = currentLorebook
         ? await findSimilarEntry(currentLorebook, draft)
         : null;
 
-    // Remove existing modal if any
-    const existingModal = document.querySelector('.le-modal-overlay');
-    if (existingModal) {
-        existingModal.remove();
-    }
+    // Build the content container — this is what Popup wraps
+    const content = document.createElement('div');
+    content.style.cssText = 'display:flex; flex-direction:column; gap:12px; min-width:300px;';
 
-    // Create modal overlay
-    const overlay = document.createElement('div');
-    overlay.className = 'le-modal-overlay';
-    Object.assign(overlay.style, {
-        position:       'fixed',
-        top:            '0',
-        left:           '0',
-        right:          '0',
-        bottom:         '0',
-        background:     'rgba(0,0,0,0.7)',
-        display:        'flex',
-        alignItems:     'center',
-        justifyContent: 'center',
-        padding:        '16px',
-        boxSizing:      'border-box',
-        overflowY:      'auto',
-        zIndex:         '9999',
-    });
-
-    // Create modal
-    const modal = document.createElement('div');
-    modal.className = 'le-modal';
-    Object.assign(modal.style, {
-        width:      '100%',
-        maxWidth:   '560px',
-        maxHeight:  '85vh',
-        overflowY:  'auto',
-        boxSizing:  'border-box',
-        position:   'relative',
-    });
-
-    // Duplicate warning banner (only shown when a match is found)
+    // --- Duplicate warning banner ---
     if (similarEntry) {
         const banner = document.createElement('div');
-        banner.id = 'le-duplicate-banner';
         banner.style.cssText = `
-            background: rgba(200, 40, 40, 0.85);
-            border: 1px solid rgba(255, 80, 80, 0.6);
+            background: rgba(200,40,40,0.85);
+            border: 1px solid rgba(255,80,80,0.6);
             border-radius: 6px;
             padding: 10px 14px;
-            margin-bottom: 12px;
             color: #fff;
             font-size: 13px;
             font-family: 'Inter', system-ui, sans-serif;
@@ -424,122 +391,71 @@ async function showReviewModal(draft, selectedText, messageContext) {
 
         const bannerTitle = document.createElement('div');
         bannerTitle.style.cssText = 'font-weight:600; margin-bottom:6px;';
-        bannerTitle.textContent =
-            `⚠️ Similar entry found: "${similarEntry.comment || 'Untitled'}"`;
+        bannerTitle.textContent = `⚠️ Similar entry found: "${similarEntry.comment || 'Untitled'}"`;
 
         const toggleBtn = document.createElement('button');
         toggleBtn.textContent = 'Show Comparison ▼';
         toggleBtn.style.cssText = `
-            background: rgba(255,255,255,0.2);
-            border: 1px solid rgba(255,255,255,0.4);
-            border-radius: 4px;
-            color: #fff;
-            cursor: pointer;
-            font-size: 12px;
-            padding: 3px 8px;
-            margin-top: 2px;
+            background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4);
+            border-radius:4px; color:#fff; cursor:pointer; font-size:12px; padding:3px 8px;
         `;
 
-        // Comparison panel — hidden by default
         const comparisonPanel = document.createElement('div');
-        comparisonPanel.id = 'le-comparison-panel';
         comparisonPanel.style.cssText = 'display:none; margin-top:10px;';
 
-        // Helper to create a comparison row
         function makeCompareRow(label, existingVal, newFieldId) {
             const row = document.createElement('div');
-            row.style.cssText = `
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 8px;
-                margin-bottom: 10px;
-            `;
+            row.style.cssText = 'display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;';
             row.innerHTML = `
                 <div>
-                    <div style="font-size:11px; opacity:0.7; margin-bottom:3px;">
-                        EXISTING — ${label}
-                    </div>
-                    <div style="
-                        background: rgba(0,0,0,0.3);
-                        border-radius: 4px;
-                        padding: 6px 8px;
-                        font-size: 12px;
-                        white-space: pre-wrap;
-                        word-break: break-word;
-                        max-height: 120px;
-                        overflow-y: auto;
-                    ">${escapeHtml(existingVal)}</div>
+                    <div style="font-size:11px;opacity:0.7;margin-bottom:3px;">EXISTING — ${label}</div>
+                    <div style="background:rgba(0,0,0,0.3);border-radius:4px;padding:6px 8px;
+                        font-size:12px;white-space:pre-wrap;word-break:break-word;
+                        max-height:120px;overflow-y:auto;">${escapeHtml(existingVal)}</div>
                 </div>
                 <div>
-                    <div style="font-size:11px; opacity:0.7; margin-bottom:3px;">
-                        NEW — ${label}
-                    </div>
-                    <div style="
-                        background: rgba(0,0,0,0.2);
-                        border-radius: 4px;
-                        padding: 6px 8px;
-                        font-size: 12px;
-                        white-space: pre-wrap;
-                        word-break: break-word;
-                        max-height: 120px;
-                        overflow-y: auto;
-                    ">${escapeHtml(document.getElementById(newFieldId)?.value ?? '')}</div>
+                    <div style="font-size:11px;opacity:0.7;margin-bottom:3px;">NEW — ${label}</div>
+                    <div style="background:rgba(0,0,0,0.2);border-radius:4px;padding:6px 8px;
+                        font-size:12px;white-space:pre-wrap;word-break:break-word;
+                        max-height:120px;overflow-y:auto;">${escapeHtml(document.getElementById(newFieldId)?.value ?? '')}</div>
                 </div>
             `;
             return row;
         }
 
-        // LLM Merge button
         const mergeBtn = document.createElement('button');
         mergeBtn.textContent = '🤖 LLM Merge';
         mergeBtn.style.cssText = `
-            background: rgba(255,255,255,0.2);
-            border: 1px solid rgba(255,255,255,0.4);
-            border-radius: 4px;
-            color: #fff;
-            cursor: pointer;
-            font-size: 12px;
-            padding: 4px 10px;
-            margin-top: 8px;
+            background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4);
+            border-radius:4px; color:#fff; cursor:pointer; font-size:12px;
+            padding:4px 10px; margin-top:8px;
         `;
 
-        // Proposed merge area — hidden until LLM responds
         const proposedArea = document.createElement('div');
         proposedArea.id = 'le-proposed-merge';
         proposedArea.style.cssText = 'display:none; margin-top:10px;';
         proposedArea.innerHTML = `
-            <div style="font-size:11px; opacity:0.7; margin-bottom:4px;">
-                PROPOSED MERGE — review before accepting
-            </div>
+            <div style="font-size:11px;opacity:0.7;margin-bottom:4px;">PROPOSED MERGE — review before accepting</div>
             <div style="margin-bottom:6px;">
                 <label style="font-size:11px;">Title</label>
-                <input type="text" id="le-merge-title" style="
-                    width:100%; box-sizing:border-box;
-                    background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.2);
-                    border-radius:4px; color:#fff; padding:4px 6px; font-size:12px;
-                ">
+                <input type="text" id="le-merge-title" style="width:100%;box-sizing:border-box;
+                    background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.2);
+                    border-radius:4px;color:#fff;padding:4px 6px;font-size:12px;">
             </div>
             <div style="margin-bottom:6px;">
                 <label style="font-size:11px;">Keywords</label>
-                <input type="text" id="le-merge-keywords" style="
-                    width:100%; box-sizing:border-box;
-                    background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.2);
-                    border-radius:4px; color:#fff; padding:4px 6px; font-size:12px;
-                ">
+                <input type="text" id="le-merge-keywords" style="width:100%;box-sizing:border-box;
+                    background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.2);
+                    border-radius:4px;color:#fff;padding:4px 6px;font-size:12px;">
             </div>
             <div style="margin-bottom:6px;">
                 <label style="font-size:11px;">Content</label>
-                <textarea id="le-merge-content" rows="5" style="
-                    width:100%; box-sizing:border-box;
-                    background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.2);
-                    border-radius:4px; color:#fff; padding:4px 6px; font-size:12px;
-                    resize:vertical;
-                "></textarea>
+                <textarea id="le-merge-content" rows="5" style="width:100%;box-sizing:border-box;
+                    background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.2);
+                    border-radius:4px;color:#fff;padding:4px 6px;font-size:12px;resize:vertical;"></textarea>
             </div>
-            <button id="le-accept-merge" style="
-                background:#4a9eff; border:none; border-radius:4px;
-                color:#fff; cursor:pointer; font-size:12px; padding:5px 12px;
-            ">✅ Accept Merge & Save</button>
+            <button id="le-accept-merge" style="background:#4a9eff;border:none;border-radius:4px;
+                color:#fff;cursor:pointer;font-size:12px;padding:5px 12px;">✅ Accept Merge & Save</button>
         `;
 
         mergeBtn.onclick = async () => {
@@ -569,45 +485,24 @@ async function showReviewModal(draft, selectedText, messageContext) {
             }
         };
 
-        // Wire toggle button
         toggleBtn.onclick = () => {
             const isHidden = comparisonPanel.style.display === 'none';
             comparisonPanel.style.display = isHidden ? 'block' : 'none';
             toggleBtn.textContent = isHidden ? 'Hide Comparison ▲' : 'Show Comparison ▼';
             if (isHidden) {
-                // Render comparison rows now (fields exist in DOM at this point)
                 comparisonPanel.innerHTML = '';
-                comparisonPanel.appendChild(
-                    makeCompareRow('Title',
-                        similarEntry.comment || '',
-                        'le-title')
-                );
-                comparisonPanel.appendChild(
-                    makeCompareRow('Keywords',
-                        (similarEntry.key || []).join(', '),
-                        'le-keywords')
-                );
-                comparisonPanel.appendChild(
-                    makeCompareRow('Content',
-                        similarEntry.content || '',
-                        'le-content')
-                );
+                comparisonPanel.appendChild(makeCompareRow('Title',    similarEntry.comment || '',                     'le-title'));
+                comparisonPanel.appendChild(makeCompareRow('Keywords', (similarEntry.key || []).join(', '),            'le-keywords'));
+                comparisonPanel.appendChild(makeCompareRow('Content',  similarEntry.content || '',                     'le-content'));
                 comparisonPanel.appendChild(mergeBtn);
                 comparisonPanel.appendChild(proposedArea);
 
                 const closePanelBtn = document.createElement('button');
                 closePanelBtn.textContent = 'Hide Comparison ▲';
                 closePanelBtn.style.cssText = `
-                    background: rgba(255,255,255,0.2);
-                    border: 1px solid rgba(255,255,255,0.4);
-                    border-radius: 4px;
-                    color: #fff;
-                    cursor: pointer;
-                    font-size: 12px;
-                    padding: 3px 8px;
-                    margin-top: 10px;
-                    display: block;
-                    width: 100%;
+                    background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4);
+                    border-radius:4px; color:#fff; cursor:pointer; font-size:12px;
+                    padding:3px 8px; margin-top:10px; display:block; width:100%;
                 `;
                 closePanelBtn.onclick = () => {
                     comparisonPanel.style.display = 'none';
@@ -620,32 +515,34 @@ async function showReviewModal(draft, selectedText, messageContext) {
         banner.appendChild(bannerTitle);
         banner.appendChild(toggleBtn);
         banner.appendChild(comparisonPanel);
-        modal.appendChild(banner);
+        content.appendChild(banner);
     }
-    
-    // Title field
+
+    // --- Title field ---
     const titleGroup = document.createElement('div');
     titleGroup.innerHTML = `
         <label for="le-title">Title</label>
-        <input type="text" id="le-title" value="${escapeHtml(draft.title)}">
+        <input type="text" id="le-title" class="text_pole" value="${escapeHtml(draft.title)}">
     `;
-    
-    // Keywords field
+    content.appendChild(titleGroup);
+
+    // --- Keywords field ---
     const keywordsGroup = document.createElement('div');
     keywordsGroup.innerHTML = `
         <label for="le-keywords">Keywords (comma-separated)</label>
-        <input type="text" id="le-keywords" value="${escapeHtml(draft.keywords.join(', '))}">
+        <input type="text" id="le-keywords" class="text_pole" value="${escapeHtml(draft.keywords.join(', '))}">
     `;
-    
-    // Content field
+    content.appendChild(keywordsGroup);
+
+    // --- Content field ---
     const contentGroup = document.createElement('div');
     contentGroup.innerHTML = `
         <label for="le-content">Lore Content</label>
-        <textarea id="le-content">${escapeHtml(draft.content)}</textarea>
+        <textarea id="le-content" class="text_pole" rows="6">${escapeHtml(draft.content)}</textarea>
     `;
-    
-    // Lorebook selector
-    const lorebookGroup = document.createElement('div');
+    content.appendChild(contentGroup);
+
+    // --- Lorebook selector ---
     const savedLorebook = extension_settings['SillyTavern-Scribe']?.selectedLorebook || '';
     let lorebookOptions = '';
     if (world_names && world_names.length > 0) {
@@ -656,63 +553,40 @@ async function showReviewModal(draft, selectedText, messageContext) {
     } else {
         lorebookOptions = '<option value="">(No lorebooks found)</option>';
     }
+    const lorebookGroup = document.createElement('div');
     lorebookGroup.innerHTML = `
         <label for="le-lorebook">Lorebook</label>
-        <select id="le-lorebook">${lorebookOptions}</select>
+        <select id="le-lorebook" class="text_pole">${lorebookOptions}</select>
     `;
-    
-    // Revision instructions field
+    content.appendChild(lorebookGroup);
+
+    // --- Revision instructions ---
     const revisionGroup = document.createElement('div');
     revisionGroup.innerHTML = `
         <label for="le-revision">Revision Instructions (optional)</label>
-        <textarea id="le-revision" placeholder="e.g. Make it shorter, add more mystery..."></textarea>
+        <textarea id="le-revision" class="text_pole" rows="2"
+            placeholder="e.g. Make it shorter, add more mystery..."></textarea>
     `;
-    
-    // Buttons
+    content.appendChild(revisionGroup);
+
+    // --- Buttons row ---
     const buttonsDiv = document.createElement('div');
-    buttonsDiv.className = 'le-modal-buttons';
-    
-    const cancelBtn = document.createElement('button');
-    cancelBtn.textContent = 'Cancel';
-    cancelBtn.style.cssText = `
-        padding: 8px 16px;
-        background: rgba(255,255,255,0.1);
-        border: 1px solid rgba(255,255,255,0.2);
-        border-radius: 6px;
-        color: var(--SmartThemeBodyColor);
-        cursor: pointer;
-        font-family: 'Inter', system-ui, sans-serif;
-    `;
-    cancelBtn.onclick = () => overlay.remove();
-    
+    buttonsDiv.style.cssText = 'display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap;';
+
     const regenBtn = document.createElement('button');
     regenBtn.textContent = '🔄 Regenerate';
-    regenBtn.style.cssText = `
-        padding: 8px 16px;
-        background: rgba(255,255,255,0.1);
-        border: 1px solid rgba(255,255,255,0.2);
-        border-radius: 6px;
-        color: var(--SmartThemeBodyColor);
-        cursor: pointer;
-        font-family: 'Inter', system-ui, sans-serif;
-    `;
+    regenBtn.classList.add('menu_button');
     regenBtn.onclick = async () => {
         const revisionInstructions = document.getElementById('le-revision').value.trim();
-
-        // Show loading state on button, disable to prevent double-clicks
         regenBtn.disabled = true;
         regenBtn.textContent = '⏳ Regenerating...';
-
         try {
             const response = await generateLoreEntry(selectedText, messageContext, revisionInstructions);
             const parsed = parseLoreResponse(response);
-
             if (parsed) {
-                // Update fields in place — do not close the modal
-                document.getElementById('le-title').value = parsed.title;
+                document.getElementById('le-title').value    = parsed.title;
                 document.getElementById('le-keywords').value = parsed.keywords.join(', ');
-                document.getElementById('le-content').value = parsed.content;
-                // Revision field is intentionally left unchanged
+                document.getElementById('le-content').value  = parsed.content;
             } else {
                 toastr.error('Failed to parse regenerated entry. Try again.');
             }
@@ -724,77 +598,43 @@ async function showReviewModal(draft, selectedText, messageContext) {
             regenBtn.textContent = '🔄 Regenerate';
         }
     };
-    
+
     const saveBtn = document.createElement('button');
     saveBtn.textContent = 'Save';
-    saveBtn.style.cssText = `
-        padding: 8px 16px;
-        background: #4a9eff;
-        border: none;
-        border-radius: 6px;
-        color: white;
-        cursor: pointer;
-        font-family: 'Inter', system-ui, sans-serif;
-    `;
-    saveBtn.onclick = () => {
-        const title = document.getElementById('le-title').value.trim();
+    saveBtn.classList.add('menu_button');
+    saveBtn.onclick = async () => {
+        const title       = document.getElementById('le-title').value.trim();
         const keywordsStr = document.getElementById('le-keywords').value.trim();
-        const content = document.getElementById('le-content').value.trim();
-        const lorebookName = document.getElementById('le-lorebook').value;
-        
-        if (!title || !content) {
-            toastr.error('Title and content are required');
-            return;
-        }
-        
-        if (!lorebookName) {
-            toastr.error('Please select a lorebook');
-            return;
-        }
-        
-        const keywords = keywordsStr ? keywordsStr.split(',').map(k => k.trim()).filter(k => k) : [];
-        
-        saveLoreEntry(lorebookName, title, keywords, content);
-        
-        // Persist the chosen lorebook back to settings
-        if (!extension_settings['SillyTavern-Scribe']) {
-            extension_settings['SillyTavern-Scribe'] = {};
-        }
+        const content_val = document.getElementById('le-content').value.trim();
+        const lorebookName= document.getElementById('le-lorebook').value;
+
+        if (!title || !content_val) { toastr.error('Title and content are required'); return; }
+        if (!lorebookName)          { toastr.error('Please select a lorebook');        return; }
+
+        const keywords = keywordsStr
+            ? keywordsStr.split(',').map(k => k.trim()).filter(k => k)
+            : [];
+
+        await saveLoreEntry(lorebookName, title, keywords, content_val);
+
+        if (!extension_settings['SillyTavern-Scribe']) extension_settings['SillyTavern-Scribe'] = {};
         extension_settings['SillyTavern-Scribe'].selectedLorebook = lorebookName;
         saveSettingsDebounced();
-        
-        overlay.remove();
+
+        popup.close();
     };
-    
-    buttonsDiv.appendChild(cancelBtn);
+
     buttonsDiv.appendChild(regenBtn);
     buttonsDiv.appendChild(saveBtn);
-    
-    // Assemble modal
-    modal.appendChild(titleGroup);
-    modal.appendChild(keywordsGroup);
-    modal.appendChild(contentGroup);
-    modal.appendChild(lorebookGroup);
-    modal.appendChild(revisionGroup);
-    modal.appendChild(buttonsDiv);
-    overlay.appendChild(modal);
-    
-    // Add to DOM
-    document.body.appendChild(overlay);
-    
-    // Close on overlay click
-    overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) {
-            overlay.remove();
-        }
-    });
+    content.appendChild(buttonsDiv);
 
-    // Accept Merge & Save button handler
-    overlay.addEventListener('click', async (e) => {
+    // --- Accept Merge button handler (delegated) ---
+    content.addEventListener('click', async (e) => {
         if (e.target.id !== 'le-accept-merge') return;
 
-        const confirmed = confirm(
-            `This will overwrite the existing entry "${similarEntry.comment || 'Untitled'}" with the merged version. Continue?`
+        const confirmed = await Popup.show.confirm(
+            'Overwrite existing entry?',
+            `This will overwrite "${similarEntry.comment || 'Untitled'}" with the merged version.`
         );
         if (!confirmed) return;
 
@@ -811,35 +651,29 @@ async function showReviewModal(draft, selectedText, messageContext) {
 
         try {
             const book = await loadWorldInfo(lorebookName);
-            if (!book?.entries) {
-                toastr.error('Could not load lorebook.');
-                return;
-            }
+            if (!book?.entries) { toastr.error('Could not load lorebook.'); return; }
 
-            // Find the existing entry by uid and overwrite its fields
-            const existingUid = similarEntry.uid;
-            const target = Object.values(book.entries)
-                               .find(e => e.uid === existingUid);
-            if (!target) {
-                toastr.error('Original entry no longer exists in lorebook.');
-                return;
-            }
+            const target = Object.values(book.entries).find(e => e.uid === similarEntry.uid);
+            if (!target) { toastr.error('Original entry no longer exists.'); return; }
 
-            target.comment         = mergedTitle;
-            target.key             = mergedKeywords;
-            target.keysecondary    = target.keysecondary || [];
-            target.content         = mergedContent;
+            target.comment      = mergedTitle;
+            target.key          = mergedKeywords;
+            target.keysecondary = target.keysecondary || [];
+            target.content      = mergedContent;
 
             await saveWorldInfo(lorebookName, book, true);
             await reloadEditor(lorebookName);
-
             toastr.success(`Merged entry saved to ${lorebookName}`);
-            overlay.remove();
+            popup.close();
         } catch (err) {
             console.error('SillyTavern-Scribe!: Accept merge failed:', err);
             toastr.error('Failed to save merged entry.');
         }
     });
+
+    // --- Show via ST's Popup class ---
+    const popup = new Popup(content, 'text', null, { wide: true, allowVerticalScrolling: true });
+    await popup.show();
 }
 
 /**
