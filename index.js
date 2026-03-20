@@ -364,7 +364,7 @@ function escapeHtml(text) {
 async function showReviewModal(draft, selectedText, messageContext) {
     console.log('SillyTavern-Scribe!: Showing review modal with draft:', draft);
 
-    const { Popup } = SillyTavern.getContext();
+    const { Popup, POPUP_TYPE } = SillyTavern.getContext();
 
     // Check for duplicates in the currently selected lorebook
     const currentLorebook = extension_settings['SillyTavern-Scribe']?.selectedLorebook || '';
@@ -621,7 +621,7 @@ async function showReviewModal(draft, selectedText, messageContext) {
         extension_settings['SillyTavern-Scribe'].selectedLorebook = lorebookName;
         saveSettingsDebounced();
 
-        popup.close();
+        popup.complete(0);
     };
 
     buttonsDiv.appendChild(regenBtn);
@@ -664,7 +664,7 @@ async function showReviewModal(draft, selectedText, messageContext) {
             await saveWorldInfo(lorebookName, book, true);
             await reloadEditor(lorebookName);
             toastr.success(`Merged entry saved to ${lorebookName}`);
-            popup.close();
+            popup.complete(0);
         } catch (err) {
             console.error('SillyTavern-Scribe!: Accept merge failed:', err);
             toastr.error('Failed to save merged entry.');
@@ -672,7 +672,7 @@ async function showReviewModal(draft, selectedText, messageContext) {
     });
 
     // --- Show via ST's Popup class ---
-    const popup = new Popup(content, 'text', null, { wide: true, allowVerticalScrolling: true });
+    const popup = new Popup(content, POPUP_TYPE.TEXT, '', { wide: true, allowVerticalScrolling: true });
     await popup.show();
 }
 
