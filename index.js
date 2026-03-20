@@ -379,10 +379,33 @@ async function showReviewModal(draft, selectedText, messageContext) {
     // Create modal overlay
     const overlay = document.createElement('div');
     overlay.className = 'le-modal-overlay';
+    Object.assign(overlay.style, {
+        position:       'fixed',
+        top:            '0',
+        left:           '0',
+        right:          '0',
+        bottom:         '0',
+        background:     'rgba(0,0,0,0.7)',
+        display:        'flex',
+        alignItems:     'center',
+        justifyContent: 'center',
+        padding:        '16px',
+        boxSizing:      'border-box',
+        overflowY:      'auto',
+        zIndex:         '9999',
+    });
 
     // Create modal
     const modal = document.createElement('div');
     modal.className = 'le-modal';
+    Object.assign(modal.style, {
+        width:      '100%',
+        maxWidth:   '560px',
+        maxHeight:  '85vh',
+        overflowY:  'auto',
+        boxSizing:  'border-box',
+        position:   'relative',
+    });
 
     // Duplicate warning banner (only shown when a match is found)
     if (similarEntry) {
