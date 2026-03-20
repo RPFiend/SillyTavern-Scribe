@@ -696,9 +696,12 @@ async function showReviewModal(draft, selectedText, messageContext) {
     content.appendChild(lengthGroup);
 
     // Wire length dropdown
-    const lengthSelect = document.getElementById('le-length-select');
-    const customWrap   = document.getElementById('le-custom-token-wrap');
-    const customInput  = document.getElementById('le-custom-token-count');
+    const lengthSelect = lengthGroup.querySelector('#le-length-select');
+    const customWrap   = lengthGroup.querySelector('#le-custom-token-wrap');
+    const customInput  = lengthGroup.querySelector('#le-custom-token-count');
+
+    console.log('[Scribe] Length controls found:',
+        !!lengthSelect, !!customWrap, !!customInput);
 
     lengthSelect.addEventListener('change', () => {
         const val = lengthSelect.value;
