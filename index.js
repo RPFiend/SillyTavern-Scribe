@@ -212,26 +212,68 @@ Message context: ${messageContext}${revisionInstructions ? `\nRevision instructi
  */
 function parseLoreResponse(response) {
     try {
-        // Strip markdown code fences if present
         let cleaned = response.trim();
-        if (cleaned.startsWith('```')) {
-            cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-        }
-        // Defensive fallback: extract the first {...} block in case of extra text
+
+        // Step 1: Strip reasoning blocks (DeepSeek, QwQ, and other reasoning models)
+        // Used by DeepSeek, QwQ, and other reasoning models
+        cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+        cleaned = cleaned.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
+        cleaned = cleaned.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '').trim();
+
+        // Step 2: Strip markdown code fences
+        // Handles ```json, ```JSON, ``` with or without language tag
+        cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+
+        // Step 3: Extract the first complete {...} block
+        // This handles any preamble text like "Here is your entry:"
+        // Uses greedy match to get the outermost complete JSON object
         const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-        if (jsonMatch) cleaned = jsonMatch;
-        
-        const parsed = JSON.parse(cleaned);
-        
-        if (parsed.title && Array.isArray(parsed.keywords) && parsed.content) {
-            return {
-                title: parsed.title,
-                keywords: parsed.keywords,
-                content: parsed.content
-            };
+        if (!jsonMatch) {
+            console.error('[SillyTavern-Scribe] No JSON object found in response.\nRaw:', response);
+            return null;
         }
-        
-        return null;
+        cleaned = jsonMatch[0];  // jsonMatch is an array — take index 0
+
+        // Step 4: Fix trailing commas before } or ] which are invalid JSON
+        // e.g. {"title": "x", "keywords": ["a", "b",], "content": "y",}
+        cleaned = cleaned.replace(/,\s*([}\]])/g, '$1');
+
+        // Step 5: Parse
+        const parsed = JSON.parse(cleaned);
+
+        // Step 6: Validate and normalize fields
+        if (!parsed || typeof parsed !== 'object') {
+            console.error('[SillyTavern-Scribe] Parsed value is not an object.\nRaw:', response);
+            return null;
+        }
+
+        const title = parsed.title || parsed.name || parsed.Title || parsed.Name || '';
+        if (!title) {
+            console.error('[SillyTavern-Scribe] No title field found.\nRaw:', response);
+            return null;
+        }
+
+        // Normalize keywords — handle string, array, or comma-separated string
+        let keywords = parsed.keywords || parsed.keys || parsed.tags || parsed.Keywords || [];
+        if (typeof keywords === 'string') {
+            keywords = keywords.split(',').map(k => k.trim()).filter(Boolean);
+        } else if (!Array.isArray(keywords)) {
+            keywords = [];
+        }
+        // Each keyword element might itself be non-string, normalize
+        keywords = keywords
+            .map(k => String(k).trim())
+            .filter(Boolean);
+
+        const content = parsed.content || parsed.description || parsed.text
+            || parsed.Content || parsed.Description || '';
+        if (!content) {
+            console.error('[SillyTavern-Scribe] No content field found.\nRaw:', response);
+            return null;
+        }
+
+        return { title, keywords, content };
+
     } catch (e) {
         console.error('[SillyTavern-Scribe] Failed to parse LLM response:', e, '\nRaw response:', response);
         return null;
