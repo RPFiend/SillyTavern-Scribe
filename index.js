@@ -663,7 +663,7 @@ async function showReviewModal(draft, selectedText, messageContext) {
         }
 
         const mergeBtn = document.createElement('button');
-        mergeBtn.textContent = '🤖 LLM Merge';
+        mergeBtn.textContent = '🤖 Merge';
         mergeBtn.style.cssText = `
             background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4);
             border-radius:4px; color:#fff; cursor:pointer; font-size:12px;
@@ -865,7 +865,7 @@ async function showReviewModal(draft, selectedText, messageContext) {
     const previewGroup = document.createElement('div');
 
     const previewToggle = document.createElement('button');
-    previewToggle.textContent = '🔍 Preview Full Prompt ▼';
+    previewToggle.textContent = '🔍 Preview Full Prompt Being Sent▼';
     previewToggle.style.cssText = `
         background: rgba(255,255,255,0.05);
         border: 1px solid rgba(255,255,255,0.15);
