@@ -945,20 +945,43 @@ SURROUNDING CONTEXT: ${messageContext}`;
 
     // --- Lorebook selector ---
     const savedLorebook = extension_settings['SillyTavern-Scribe']?.selectedLorebook || '';
-    let lorebookOptions = '';
-    if (world_names && world_names.length > 0) {
-        lorebookOptions = world_names.map(name => {
-            const selected = name === savedLorebook ? ' selected' : '';
-            return `<option value="${escapeHtml(name)}"${selected}>${escapeHtml(name)}</option>`;
-        }).join('');
-    } else {
-        lorebookOptions = '<option value="">(No lorebooks found)</option>';
-    }
+
     const lorebookGroup = document.createElement('div');
-    lorebookGroup.innerHTML = `
-        <label for="le-lorebook">Lorebook</label>
-        <select id="le-lorebook" class="text_pole">${lorebookOptions}</select>
-    `;
+
+    const lorebookLabel = document.createElement('label');
+    lorebookLabel.setAttribute('for', 'le-lorebook');
+    lorebookLabel.textContent = 'Lorebook';
+    lorebookLabel.style.cssText = 'font-size:13px; display:block; margin-bottom:4px;';
+
+    const lorebookRow = document.createElement('div');
+    lorebookRow.className = 'le-lorebook-row';
+
+    const lorebookSelect = document.createElement('select');
+    lorebookSelect.id = 'le-lorebook';
+    lorebookSelect.className = 'text_pole';
+    lorebookSelect.innerHTML = buildLorebookOptions(savedLorebook);
+
+    const lorebookRefreshBtn = document.createElement('button');
+    lorebookRefreshBtn.className = 'le-refresh-btn';
+    lorebookRefreshBtn.title = 'Refresh lorebook list';
+    lorebookRefreshBtn.textContent = '🔄';
+
+    lorebookRefreshBtn.addEventListener('click', () => {
+        const currentVal = lorebookSelect.value;
+        lorebookSelect.innerHTML = buildLorebookOptions(savedLorebook);
+        // Restore selection if it still exists
+        if (currentVal && world_names?.includes(currentVal)) {
+            lorebookSelect.value = currentVal;
+        }
+        console.log('[Scribe] Modal lorebook list refreshed,',
+            world_names?.length ?? 0, 'lorebooks found');
+        toastr.success('Lorebook list refreshed');
+    });
+
+    lorebookRow.appendChild(lorebookSelect);
+    lorebookRow.appendChild(lorebookRefreshBtn);
+    lorebookGroup.appendChild(lorebookLabel);
+    lorebookGroup.appendChild(lorebookRow);
     content.appendChild(lorebookGroup);
 
     // --- Length control ---
@@ -1188,6 +1211,16 @@ async function saveLoreEntry(lorebookName, title, keywords, content) {
     }
 }
 
+function buildLorebookOptions(savedValue) {
+    if (!world_names || world_names.length === 0) {
+        return '<option value="">(No lorebooks found)</option>';
+    }
+    return world_names.map(name => {
+        const selected = name === savedValue ? ' selected' : '';
+        return `<option value="${escapeHtml(name)}"${selected}>${escapeHtml(name)}</option>`;
+    }).join('');
+}
+
 /**
  * Injects the extension settings panel into SillyTavern's settings UI
  */
@@ -1212,10 +1245,13 @@ async function injectSettingsPanel() {
             </small>
             
             <label for="scribe-lorebook-select" style="margin-top:12px;">Active Lorebook</label>
-            <select id="scribe-lorebook-select" class="text_pole">
-              <option value="">(Select a lorebook)</option>
-              ${lorebookOptions}
-            </select>
+            <div class="le-lorebook-row">
+              <select id="scribe-lorebook-select" class="text_pole">
+                <option value="">(Select a lorebook)</option>
+                ${lorebookOptions}
+              </select>
+              <button id="scribe-lorebook-refresh" class="le-refresh-btn" title="Refresh lorebook list">🔄</button>
+            </div>
             <small style="opacity:0.6; font-size:11px; margin-top:4px;">
               Highlight text in any chat message, then click "📖 Extract Lore".
             </small>
@@ -1293,6 +1329,22 @@ async function injectSettingsPanel() {
         }
         extension_settings['SillyTavern-Scribe'].selectedLorebook = $(this).val();
         saveSettingsDebounced();
+    });
+
+    // Lorebook refresh button
+    $('#scribe-lorebook-refresh').on('click', function() {
+        const currentVal = $('#scribe-lorebook-select').val();
+        const savedVal   = extension_settings['SillyTavern-Scribe']?.selectedLorebook || '';
+        const newOptions = '<option value="">(Select a lorebook)</option>'
+            + buildLorebookOptions(savedVal);
+        $('#scribe-lorebook-select').html(newOptions);
+        // Restore selection if it still exists
+        if (currentVal && world_names?.includes(currentVal)) {
+            $('#scribe-lorebook-select').val(currentVal);
+        }
+        console.log('[Scribe] Settings lorebook list refreshed,',
+            world_names?.length ?? 0, 'lorebooks found');
+        toastr.success('Lorebook list refreshed');
     });
 
     // Restore saved values for new controls

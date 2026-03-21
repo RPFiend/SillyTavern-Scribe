@@ -72,3 +72,30 @@
     background: rgba(255, 255, 255, 0.2);
     border-color: rgba(255, 255, 255, 0.4);
 }
+
+.le-lorebook-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.le-lorebook-row select {
+    flex: 1;
+}
+
+.le-refresh-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 6px;
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    font-size: 13px;
+    padding: 4px 8px;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+.le-refresh-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.4);
+}
