@@ -45,3 +45,30 @@
     flex-direction: column;
     gap: 12px;
 }
+
+.le-modal-close {
+    position: sticky;
+    top: 0;
+    float: right;
+    z-index: 10;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    font-size: 16px;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    margin-left: auto;
+    margin-bottom: 4px;
+    flex-shrink: 0;
+}
+
+.le-modal-close:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.4);
+}

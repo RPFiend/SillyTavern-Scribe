@@ -551,6 +551,17 @@ async function showReviewModal(draft, selectedText, messageContext) {
         dialog.remove();
     }
 
+    // Sticky close button — always visible at top right on mobile
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'le-modal-close';
+    closeBtn.textContent = '✕';
+    closeBtn.title = 'Close';
+    closeBtn.addEventListener('click', () => {
+        console.log('[Scribe] Modal closed via ✕ button');
+        closeModal();
+    });
+    content.appendChild(closeBtn);
+
     function makeFieldRow(labelText, inputHtml, fieldId, onRegen) {
         const wrap = document.createElement('div');
 
