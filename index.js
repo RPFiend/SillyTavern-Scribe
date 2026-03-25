@@ -1854,18 +1854,19 @@ async function injectSettingsPanel() {
         toastr.success('System prompt reset to default');
     });
 
-    // --- Story Summary Toggle (CHANGE 3 & 4) ---
+    // --- Story Summary Toggle ---
     // Add the toggle HTML to the settings panel - grouped with other Include checkboxes
+    // Wrap both label and small in the same flex container structure
     const summaryToggleHtml = `
-    <div class="scribe-setting-row">
-      <label class="checkbox_label" for="scribe-include-summary">
-        <input type="checkbox" id="scribe-include-summary" />
-        <span> Include Story Summary</span>
-      </label>
-      <small style="display:block; color: var(--SmallFontColor); margin-top: 2px;">
-        Uses qvink MessageSummarize or ST built-in Summarize if available.
-      </small>
-    </div>
+              <div style="display:flex; flex-direction:column; gap:6px;">
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                  <input type="checkbox" id="scribe-include-summary">
+                  Include story summary in lore context
+                </label>
+                <small style="opacity:0.6; font-size:11px; margin-left:24px;">
+                  Uses qvink MessageSummarize or ST built-in Summarize if available.
+                </small>
+              </div>
     `;
 
     // Insert the summary toggle after the Include Active Lorebook checkbox
