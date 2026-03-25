@@ -1860,7 +1860,7 @@ async function injectSettingsPanel() {
     <div class="scribe-setting-row">
       <label class="checkbox_label" for="scribe-include-summary">
         <input type="checkbox" id="scribe-include-summary" />
-        <span>Include story summary in lore context</span>
+        <span> Include Story Summary</span>
       </label>
       <small style="display:block; color: var(--SmallFontColor); margin-top: 2px;">
         Uses qvink MessageSummarize or ST built-in Summarize if available.
