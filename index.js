@@ -56,6 +56,14 @@ function onTextSelected() {
                 btn.style.left    = `${Math.max(8, left)}px`;
                 btn.style.top     = `${Math.max(8, top)}px`;
                 btn.style.display = 'block';
+
+                // Show Update button stacked 32px below Extract
+                const updateBtnEl = document.getElementById('le-update-btn');
+                if (updateBtnEl) {
+                    updateBtnEl.style.left    = `${Math.max(8, left)}px`;
+                    updateBtnEl.style.top     = `${Math.max(8, top + 32)}px`;
+                    updateBtnEl.style.display = 'block';
+                }
             }
             return;
         }
@@ -64,6 +72,8 @@ function onTextSelected() {
     // No valid selection — hide button and clear saved selection
     const btn = document.getElementById('le-extract-btn');
     if (btn) btn.style.display = 'none';
+    const updateBtnEl2 = document.getElementById('le-update-btn');
+    if (updateBtnEl2) updateBtnEl2.style.display = 'none';
     savedSelection = null;
 }
 
@@ -521,13 +531,333 @@ SURROUNDING CONTEXT: ${messageContext}`;
     }
 }
 
+async function generateUpdateEntry(existingEntry, selectedText, messageContext, instructions) {
+    console.log('[Scribe] Building update prompt for:', existingEntry.comment);
+
+    const systemPrompt  = getSystemPrompt();
+    const lengthInstr   = getLengthInstruction();
+    const additionalContext = await buildContextSections();
+
+    const existingJson = JSON.stringify({
+        title:    existingEntry.comment || '',
+        keywords: existingEntry.key     || [],
+        content:  existingEntry.content || '',
+    });
+
+    const prompt = `${systemPrompt}
+
+LENGTH CONSTRAINT: ${lengthInstr}
+
+OUTPUT FORMAT — return exactly this structure, no other text:
+{"title": "...", "keywords": ["...", "..."], "content": "..."}
+
+Your task is to UPDATE an existing lorebook entry using new information from the story.
+Preserve everything in the existing entry that is still accurate.
+Incorporate any new details revealed by the selected text.
+Do not remove information unless the instructions explicitly say to.
+${additionalContext ? `\nCONTEXT:\n${additionalContext}\n` : ''}
+EXISTING ENTRY: ${existingJson}
+
+NEW INFORMATION (selected text): ${selectedText}
+SURROUNDING CONTEXT: ${messageContext}${instructions ? `\nUPDATE INSTRUCTIONS: ${instructions}` : ''}`;
+
+    console.log('[Scribe] Update prompt length (chars):', prompt.length);
+    console.log('[Scribe] Update prompt estimated tokens:', Math.ceil(prompt.length / 4));
+    console.log('[Scribe] Full update prompt:\n', prompt);
+
+    const selectedProfile = extension_settings['SillyTavern-Scribe']?.selectedProfile;
+
+    if (selectedProfile) {
+        const profileResponse = await sendWithProfile(selectedProfile, prompt);
+        if (profileResponse) {
+            console.log('[Scribe] Update response received via profile');
+            return profileResponse;
+        }
+    }
+
+    const ctx = SillyTavern.getContext();
+    const response = await ctx.generateQuietPrompt({ quietPrompt: prompt });
+    const trimmed = (response || '').trim();
+
+    if (!trimmed) {
+        throw new Error('The model returned an empty response. Try again.');
+    }
+
+    console.log('[Scribe] Update response received via default connection');
+    return trimmed;
+}
+
+async function showUpdateModal(selectedText, messageContext) {
+    console.log('[Scribe] Opening Update Lore modal');
+
+    const currentLorebook = extension_settings['SillyTavern-Scribe']?.selectedLorebook || '';
+
+    // Guard: lorebook must be selected
+    if (!currentLorebook) {
+        toastr.warning('Please select a lorebook in Scribe settings first.');
+        console.warn('[Scribe] Update Lore blocked: no lorebook selected');
+        return;
+    }
+
+    // Load lorebook entries
+    let book = null;
+    try {
+        book = await loadWorldInfo(currentLorebook);
+    } catch (e) {
+        console.error('[Scribe] Failed to load lorebook for update:', e);
+        toastr.error('Failed to load lorebook.');
+        return;
+    }
+
+    if (!book?.entries) {
+        toastr.error('No entries found in lorebook: ' + currentLorebook);
+        return;
+    }
+
+    const entries = Object.values(book.entries).filter(e => !e.disable);
+    if (entries.length === 0) {
+        toastr.error('No active entries found in lorebook: ' + currentLorebook);
+        return;
+    }
+
+    console.log('[Scribe] Loaded', entries.length, 'entries from', currentLorebook);
+
+    // Remove any existing update dialog
+    document.getElementById('le-scribe-update-dialog')?.remove();
+
+    const dialog = document.createElement('dialog');
+    dialog.id = 'le-scribe-update-dialog';
+
+    const content = document.createElement('div');
+    content.className = 'le-modal';
+
+    function closeUpdateModal() {
+        dialog.close();
+        dialog.remove();
+        console.log('[Scribe] Update modal closed');
+    }
+
+    dialog.addEventListener('click', (e) => {
+        if (e.target === dialog) closeUpdateModal();
+    });
+
+    // --- Sticky close button ---
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'le-modal-close';
+    closeBtn.textContent = '✕';
+    closeBtn.title = 'Close';
+    closeBtn.addEventListener('click', () => closeUpdateModal());
+    content.appendChild(closeBtn);
+
+    // --- Header ---
+    const header = document.createElement('div');
+    header.style.cssText = 'font-size:15px; font-weight:600; margin-bottom:4px;';
+    header.textContent = '✏️ Update Lore Entry';
+    content.appendChild(header);
+
+    const subheader = document.createElement('div');
+    subheader.style.cssText = 'font-size:12px; opacity:0.6; margin-bottom:8px;';
+    subheader.textContent = `Lorebook: ${currentLorebook}`;
+    content.appendChild(subheader);
+
+    // --- Search input ---
+    const searchGroup = document.createElement('div');
+    searchGroup.innerHTML = `
+        <label style="font-size:13px; display:block; margin-bottom:4px;">
+            Search Entries
+        </label>
+        <input type="text" id="le-update-search" class="text_pole"
+            placeholder="Type to filter entries...">
+    `;
+    content.appendChild(searchGroup);
+
+    // --- Entry list ---
+    const entryList = document.createElement('div');
+    entryList.style.cssText = `
+        max-height: 180px;
+        overflow-y: auto;
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 6px;
+        margin-top: 6px;
+    `;
+
+    let selectedEntry = null;
+
+    function renderEntryList(filter) {
+        const { Fuse } = SillyTavern.libs;
+        let filtered = entries;
+
+        if (filter && filter.trim()) {
+            const fuse = new Fuse(entries, {
+                keys: ['comment', 'key'],
+                threshold: 0.4,
+            });
+            filtered = fuse.search(filter.trim()).map(r => r.item);
+        }
+
+        console.log('[Scribe] Entry list filtered to', filtered.length, 'results');
+
+        entryList.innerHTML = '';
+
+        if (filtered.length === 0) {
+            const empty = document.createElement('div');
+            empty.style.cssText = 'padding:10px 12px; font-size:12px; opacity:0.5;';
+            empty.textContent = 'No entries found.';
+            entryList.appendChild(empty);
+            return;
+        }
+
+        for (const entry of filtered) {
+            const row = document.createElement('div');
+            row.style.cssText = `
+                padding: 8px 12px;
+                font-size: 13px;
+                cursor: pointer;
+                border-bottom: 1px solid rgba(255,255,255,0.06);
+                transition: background 0.1s;
+            `;
+            row.textContent = entry.comment || '(Untitled)';
+
+            row.addEventListener('mouseenter', () => {
+                row.style.background = 'rgba(255,255,255,0.07)';
+            });
+            row.addEventListener('mouseleave', () => {
+                row.style.background = selectedEntry?.uid === entry.uid
+                    ? 'rgba(74,158,255,0.15)'
+                    : '';
+            });
+
+            row.addEventListener('click', () => {
+                selectedEntry = entry;
+                // Highlight selected row
+                entryList.querySelectorAll('div').forEach(r => {
+                    r.style.background = '';
+                });
+                row.style.background = 'rgba(74,158,255,0.15)';
+                renderEntryPreview(entry);
+                console.log('[Scribe] Entry selected for update:', entry.comment);
+            });
+
+            entryList.appendChild(row);
+        }
+    }
+
+    renderEntryList('');
+    content.appendChild(entryList);
+
+    // --- Entry preview ---
+    const previewContainer = document.createElement('div');
+    previewContainer.style.cssText = 'margin-top:8px;';
+
+    const previewLabel = document.createElement('div');
+    previewLabel.style.cssText = 'font-size:11px; opacity:0.5; margin-bottom:4px; text-transform:uppercase; letter-spacing:0.05em;';
+    previewLabel.textContent = 'Current Entry';
+
+    const previewBox = document.createElement('div');
+    previewBox.className = 'le-update-modal-entry-preview';
+    previewBox.style.display = 'none';
+
+    function renderEntryPreview(entry) {
+        previewBox.style.display = 'flex';
+        previewBox.innerHTML = `
+            <div class="le-preview-field">
+                <span class="le-preview-label">Title</span>
+                <span class="le-preview-value">${escapeHtml(entry.comment || '(Untitled)')}</span>
+            </div>
+            <div class="le-preview-field">
+                <span class="le-preview-label">Keywords</span>
+                <span class="le-preview-value">${escapeHtml((entry.key || []).join(', '))}</span>
+            </div>
+            <div class="le-preview-field">
+                <span class="le-preview-label">Content</span>
+                <span class="le-preview-value">${escapeHtml(entry.content || '')}</span>
+            </div>
+        `;
+    }
+
+    previewContainer.appendChild(previewLabel);
+    previewContainer.appendChild(previewBox);
+    content.appendChild(previewContainer);
+
+    // --- Update instructions ---
+    const instructionsGroup = document.createElement('div');
+    instructionsGroup.style.cssText = 'margin-top:8px;';
+    instructionsGroup.innerHTML = `
+        <label for="le-update-instructions" style="font-size:13px; display:block; margin-bottom:4px;">
+            Update Instructions (optional)
+        </label>
+        <textarea id="le-update-instructions" class="text_pole" rows="2"
+            placeholder="e.g. Add that she can also heal animals. Remove the part about the sword."></textarea>
+    `;
+    content.appendChild(instructionsGroup);
+
+    // --- Wire search input ---
+    const searchInput = content.querySelector('#le-update-search');
+    searchInput.addEventListener('input', () => {
+        renderEntryList(searchInput.value);
+    });
+
+    // --- Buttons ---
+    const buttonsDiv = document.createElement('div');
+    buttonsDiv.style.cssText = 'display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; margin-top:4px;';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.classList.add('menu_button');
+    cancelBtn.addEventListener('click', () => closeUpdateModal());
+
+    const generateBtn = document.createElement('button');
+    generateBtn.textContent = '✏️ Generate Update';
+    generateBtn.classList.add('menu_button');
+    generateBtn.addEventListener('click', async () => {
+        if (!selectedEntry) {
+            toastr.warning('Please select an entry to update.');
+            return;
+        }
+
+        const instructions = content.querySelector('#le-update-instructions')?.value.trim() || '';
+        console.log('[Scribe] Generating update for entry:', selectedEntry.comment);
+        console.log('[Scribe] Update instructions:', instructions || '(none)');
+
+        closeUpdateModal();
+
+        toastr.info('Generating updated entry...', '', { timeOut: 0, extendedTimeOut: 0 });
+
+        try {
+            const response = await generateUpdateEntry(
+                selectedEntry, selectedText, messageContext, instructions);
+            toastr.clear();
+
+            const parsed = parseLoreResponse(response);
+            if (parsed) {
+                await showReviewModal(
+                    parsed, selectedText, messageContext, selectedEntry);
+            } else {
+                toastr.error('Failed to parse updated entry. Please try again.');
+            }
+        } catch (err) {
+            toastr.clear();
+            console.error('[Scribe] Update generation failed:', err);
+            toastr.error('Failed to generate update. Please try again.');
+        }
+    });
+
+    buttonsDiv.appendChild(cancelBtn);
+    buttonsDiv.appendChild(generateBtn);
+    content.appendChild(buttonsDiv);
+
+    dialog.appendChild(content);
+    document.body.appendChild(dialog);
+    dialog.showModal();
+}
+
 /**
  * Shows the review modal for editing the generated lore entry
  * @param {{title: string, keywords: string[], content: string}} draft - The generated draft
  * @param {string} selectedText - The original selected text
  * @param {string} messageContext - The original message context
  */
-async function showReviewModal(draft, selectedText, messageContext) {
+async function showReviewModal(draft, selectedText, messageContext, existingEntry = null) {
     console.log('SillyTavern-Scribe!: Showing review modal with draft:', draft);
 
     // Remove any existing dialog
@@ -865,7 +1195,7 @@ async function showReviewModal(draft, selectedText, messageContext) {
     const previewGroup = document.createElement('div');
 
     const previewToggle = document.createElement('button');
-    previewToggle.textContent = '🔍 Preview Full Prompt Being Sent▼';
+    previewToggle.textContent = '🔍 Preview Full Prompt Being Sent ▼';
     previewToggle.style.cssText = `
         background: rgba(255,255,255,0.05);
         border: 1px solid rgba(255,255,255,0.15);
@@ -1461,6 +1791,13 @@ console.log('SillyTavern-Scribe!: Extension loaded');
     extractBtn.style.display = 'none';
     document.body.appendChild(extractBtn);
 
+    // Create Update Lore button (stacked below Extract)
+    const updateBtn = document.createElement('button');
+    updateBtn.id = 'le-update-btn';
+    updateBtn.textContent = '✏️ Update Lore';
+    updateBtn.style.display = 'none';
+    document.body.appendChild(updateBtn);
+
     // Handle button click
     extractBtn.addEventListener('click', async () => {
         console.log('SillyTavern-Scribe!: Extract button clicked');
@@ -1479,6 +1816,7 @@ console.log('SillyTavern-Scribe!: Extension loaded');
 
         // Hide the button
         extractBtn.style.display = 'none';
+        document.getElementById('le-update-btn').style.display = 'none';
 
         // Clear the selection
         window.getSelection()?.removeAllRanges();
@@ -1509,6 +1847,30 @@ console.log('SillyTavern-Scribe!: Extension loaded');
         e.preventDefault();
         if (savedSelection?.text) {
             extractBtn.click();
+        }
+    });
+
+    // Update Lore button handlers
+    updateBtn.addEventListener('click', async () => {
+        console.log('[Scribe] Update Lore button clicked');
+
+        const selectedText   = savedSelection?.text || window.getSelection()?.toString().trim() || '';
+        const messageContext = savedSelection?.mesText || '';
+
+        if (!selectedText) return;
+
+        updateBtn.style.display  = 'none';
+        extractBtn.style.display = 'none';
+        window.getSelection()?.removeAllRanges();
+        savedSelection = null;
+
+        await showUpdateModal(selectedText, messageContext);
+    });
+
+    updateBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        if (savedSelection?.text) {
+            updateBtn.click();
         }
     });
 });
