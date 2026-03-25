@@ -1855,7 +1855,7 @@ async function injectSettingsPanel() {
     });
 
     // --- Story Summary Toggle (CHANGE 3 & 4) ---
-    // Add the toggle HTML to the settings panel
+    // Add the toggle HTML to the settings panel - grouped with other Include checkboxes
     const summaryToggleHtml = `
     <div class="scribe-setting-row">
       <label class="checkbox_label" for="scribe-include-summary">
@@ -1868,8 +1868,8 @@ async function injectSettingsPanel() {
     </div>
     `;
 
-    // Append the summary toggle after the settings panel div
-    $('#scribe_settings .inline-drawer-content .flex-container').append(summaryToggleHtml);
+    // Insert the summary toggle after the Include Active Lorebook checkbox
+    $('#scribe-include-lorebook').closest('label').after(summaryToggleHtml);
 
     // Load and save the toggle state
     const summaryCheckbox = document.getElementById('scribe-include-summary');
