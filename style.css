@@ -18,7 +18,8 @@
     border-color: rgba(255,255,255,0.4);
 }
 
-#le-scribe-dialog {
+#le-scribe-dialog,
+#le-scribe-update-dialog {
     border: none;
     padding: 0;
     background: transparent;
@@ -27,7 +28,8 @@
     overflow: visible;
 }
 
-#le-scribe-dialog::backdrop {
+#le-scribe-dialog::backdrop,
+#le-scribe-update-dialog::backdrop {
     background: rgba(0, 0, 0, 0.7);
 }
 
