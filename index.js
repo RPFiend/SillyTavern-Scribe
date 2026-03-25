@@ -1861,7 +1861,7 @@ async function injectSettingsPanel() {
               <div style="display:flex; flex-direction:column; gap:6px;">
                 <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
                   <input type="checkbox" id="scribe-include-summary">
-                  Include story summary in lore context
+                  Include Story Summary
                 </label>
                 <small style="opacity:0.6; font-size:11px; margin-left:24px;">
                   Uses qvink MessageSummarize or ST built-in Summarize if available.
