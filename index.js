@@ -534,7 +534,12 @@ SURROUNDING CONTEXT: ${messageContext}`;
 async function generateUpdateEntry(existingEntry, selectedText, messageContext, instructions) {
     console.log('[Scribe] Building update prompt for:', existingEntry.comment);
 
-    const systemPrompt  = getSystemPrompt();
+    const systemPrompt = `You are a lore editor. Your only job is to revise existing lorebook entries.
+Output ONLY a raw JSON object. No preamble, no explanation, no markdown fences.
+The JSON must have exactly these three fields:
+  "title": keep the existing title or improve it if clearly more accurate
+  "keywords": keep existing keywords or add new relevant ones if warranted
+  "content": revised content that preserves what is accurate and incorporates new details`;
     const lengthInstr   = getLengthInstruction();
     const additionalContext = await buildContextSections();
 
@@ -865,7 +870,8 @@ async function showReviewModal(draft, selectedText, messageContext, existingEntr
 
     // Check for duplicates
     const currentLorebook = extension_settings['SillyTavern-Scribe']?.selectedLorebook || '';
-    const similarEntry = currentLorebook
+    // Skip duplicate check in update mode — user already knows the entry exists
+    const similarEntry = (currentLorebook && !existingEntry)
         ? await findSimilarEntry(currentLorebook, draft)
         : null;
 
