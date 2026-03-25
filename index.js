@@ -652,7 +652,7 @@ async function showUpdateModal(selectedText, messageContext) {
     // --- Header ---
     const header = document.createElement('div');
     header.style.cssText = 'font-size:15px; font-weight:600; margin-bottom:4px;';
-    header.textContent = '✏️ Update Lore Entry';
+    header.textContent = '⭐ Update Lore Entry';
     content.appendChild(header);
 
     const subheader = document.createElement('div');
@@ -807,7 +807,7 @@ async function showUpdateModal(selectedText, messageContext) {
     cancelBtn.addEventListener('click', () => closeUpdateModal());
 
     const generateBtn = document.createElement('button');
-    generateBtn.textContent = '✏️ Generate Update';
+    generateBtn.textContent = '⭐ Generate Update';
     generateBtn.classList.add('menu_button');
     generateBtn.addEventListener('click', async () => {
         if (!selectedEntry) {
@@ -891,6 +891,26 @@ async function showReviewModal(draft, selectedText, messageContext, existingEntr
         closeModal();
     });
     content.appendChild(closeBtn);
+
+    // Show a header banner when in update mode
+    if (existingEntry) {
+        const updateBanner = document.createElement('div');
+        updateBanner.style.cssText = `
+            background: rgba(74,158,255,0.15);
+            border: 1px solid rgba(74,158,255,0.3);
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 12px;
+            color: var(--SmartThemeBodyColor);
+        `;
+        updateBanner.innerHTML = `
+            ⭐ <strong>Update mode</strong> — reviewing changes to
+            "<em>${escapeHtml(existingEntry.comment || 'Untitled')}</em>"
+        `;
+        content.appendChild(updateBanner);
+        console.log('[Scribe] Modal opened in update mode for:',
+            existingEntry.comment);
+    }
 
     function makeFieldRow(labelText, inputHtml, fieldId, onRegen) {
         const wrap = document.createElement('div');
@@ -1414,13 +1434,13 @@ SURROUNDING CONTEXT: ${messageContext}`;
     };
 
     const saveBtn = document.createElement('button');
-    saveBtn.textContent = 'Save';
+    saveBtn.textContent = existingEntry ? '⭐ Save Update' : 'Save';
     saveBtn.classList.add('menu_button');
     saveBtn.onclick = async () => {
-        const title        = document.getElementById('le-title').value.trim();
-        const keywordsStr  = document.getElementById('le-keywords').value.trim();
-        const content_val  = document.getElementById('le-content').value.trim();
-        const lorebookName = document.getElementById('le-lorebook').value;
+        const title        = content.querySelector('#le-title')?.value.trim()    || '';
+        const keywordsStr  = content.querySelector('#le-keywords')?.value.trim() || '';
+        const content_val  = content.querySelector('#le-content')?.value.trim()  || '';
+        const lorebookName = content.querySelector('#le-lorebook')?.value         || '';
 
         if (!title || !content_val) {
             toastr.error('Title and content are required');
@@ -1435,14 +1455,60 @@ SURROUNDING CONTEXT: ${messageContext}`;
             ? keywordsStr.split(',').map(k => k.trim()).filter(k => k)
             : [];
 
-        await saveLoreEntry(lorebookName, title, keywords, content_val);
+        if (existingEntry) {
+            // Update mode — overwrite the existing entry
+            const confirmed = confirm(
+                `Overwrite "${existingEntry.comment || 'Untitled'}" with the updated version?`
+            );
+            if (!confirmed) return;
 
-        if (!extension_settings['SillyTavern-Scribe']) {
-            extension_settings['SillyTavern-Scribe'] = {};
+            try {
+                const book = await loadWorldInfo(lorebookName);
+                if (!book?.entries) {
+                    toastr.error('Could not load lorebook.');
+                    return;
+                }
+
+                const target = Object.values(book.entries)
+                    .find(e => e.uid === existingEntry.uid);
+                if (!target) {
+                    toastr.error('Original entry no longer exists in lorebook.');
+                    return;
+                }
+
+                target.comment      = title;
+                target.key          = keywords;
+                target.keysecondary = target.keysecondary || [];
+                target.content      = content_val;
+
+                await saveWorldInfo(lorebookName, book, true);
+                await reloadEditor(lorebookName);
+
+                if (!extension_settings['SillyTavern-Scribe']) {
+                    extension_settings['SillyTavern-Scribe'] = {};
+                }
+                extension_settings['SillyTavern-Scribe'].selectedLorebook = lorebookName;
+                saveSettingsDebounced();
+
+                toastr.success(`Entry updated in ${lorebookName}`);
+                console.log('[Scribe] Entry overwritten:', title);
+                closeModal();
+            } catch (err) {
+                console.error('[Scribe] Failed to overwrite entry:', err);
+                toastr.error('Failed to save updated entry.');
+            }
+
+        } else {
+            // Create mode — normal new entry behavior
+            await saveLoreEntry(lorebookName, title, keywords, content_val);
+
+            if (!extension_settings['SillyTavern-Scribe']) {
+                extension_settings['SillyTavern-Scribe'] = {};
+            }
+            extension_settings['SillyTavern-Scribe'].selectedLorebook = lorebookName;
+            saveSettingsDebounced();
+            closeModal();
         }
-        extension_settings['SillyTavern-Scribe'].selectedLorebook = lorebookName;
-        saveSettingsDebounced();
-        closeModal();
     };
 
     buttonsDiv.appendChild(cancelBtn);
@@ -1794,7 +1860,7 @@ console.log('SillyTavern-Scribe!: Extension loaded');
     // Create Update Lore button (stacked below Extract)
     const updateBtn = document.createElement('button');
     updateBtn.id = 'le-update-btn';
-    updateBtn.textContent = '✏️ Update Lore';
+    updateBtn.textContent = '⭐ Update Lore';
     updateBtn.style.display = 'none';
     document.body.appendChild(updateBtn);
 
