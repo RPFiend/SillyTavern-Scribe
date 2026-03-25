@@ -1,104 +1,125 @@
-# SillyTavern - Scribe!
+# SillyTavern-Scribe
 
-You're deep in a story. A name drops, a place gets mentioned, a concept surfaces that you know you'll want to remember later. Normally, you'd stop, open the lorebook editor, and manually write an entry. Scribe skips all of that. Highlight the text, tap a button, and your LLM drafts the entry for you. Review it, tweak it, save it. Done.
+## The Curse of Lorekeeping
+
+You're deep in a story. A new character just walked in with a name, a history,
+and a reason to matter. You know you should add them to your lorebook. You also
+know you won't. Not right now. You're in the moment, the scene is good, and
+stopping to open the lorebook editor, manually type out an entry, fill in the
+keys, pick the right book.. That's boring. That's a momentum killer. So you don't. And three
+sessions from now, your model hath forgotten everything. 
+
+*That's the Curse Lorekeeping.* You had every intention. You just never
+did it. I'm so terribly guilty of that.
+
+**Scribe** fixes that. Highlight any name, place, or concept directly in the
+chat. A small floating button appears. Click it. Scribe reads the surrounding
+story, drafts a full lore entry using your LLM, and hands it back to you for
+review before saving it straight to your lorebook. Best part? It's mobile friendly.
+Why is that the best part? Because I'm always on mobile.
 
 ---
 
 ## Features
 
-- Highlight any text in the chat to trigger the Extract Lore button
-- LLM drafts a lorebook entry with title, keywords, and content
-- Review and edit the draft before saving
-- Regenerate the full entry or individual fields (title, keywords, content separately)
-- Revision instructions let you guide the next generation without starting over
-- Duplicate detection checks your lorebook for similar entries before you save
-- LLM-assisted merge combines an existing entry with a new one when duplicates are found
-- Configurable context: choose how many recent messages, whether to include the character card, author's note, and active lorebook
-- Connection profile support so you can use a cheaper or faster model for lore generation
-- Custom system prompt for those who want full control over what gets sent
-- Token length control: Brief, Standard, Detailed, Extensive, or a custom token count
-- Prompt preview so you can see exactly what's going to the model before it sends
-- Works on desktop and mobile
-
----
-
-## Installation
-
-1. In SillyTavern, go to **Extensions > Install Extension**
-2. Paste this URL:
-
-```
-https://github.com/RPFiend/SillyTavern-Scribe
-```
-
-3. Reload SillyTavern
-
----
-
-## Usage
-
-1. Open a chat with any character
-2. Highlight any word, name, or phrase in a message
-3. Tap **📖 Extract Lore** when it appears above your selection
-4. Wait for the LLM to generate a draft
-5. Edit the fields if needed, pick a lorebook, and hit **Save**
-
----
-
-## Duplicate Detection and Merging
- 
-When you extract lore, Scribe automatically checks your selected lorebook for similar entries. It looks for matching keywords and similar titles. If something close enough already exists, a red banner appears at the top of the modal.
- 
-From there you have two options:
- 
-**Ignore it** — just hit Save as normal. A new separate entry gets created. The warning is advisory, not a blocker.
- 
-**Merge it** — click Show Comparison to see the existing entry side by side with the new one. When you're ready, click **Merge**. The model combines both entries into a single draft that you can review before accepting. Once you're happy with it, click **✅ Accept Merge & Save** and it overwrites the existing entry. The new draft gets discarded.
- 
-> The merge uses the same connection profile you have selected in Scribe's settings. If no profile is selected it falls back to your active connection.
- 
----
-
-## Settings
-
-In the Extensions panel under **SillyTavern - Scribe!**
-
-| Setting | What it does |
-|---|---|
-| Connection Profile | Uses a specific API profile for lore generation instead of your active one |
-| Active Lorebook | The default lorebook entries get saved to |
-| Recent Chat Messages | How many messages to send as context (0 to disable) |
-| Include Character Card | Sends the character's name, description, personality, and scenario |
-| Include Author's Note | Sends the current author's note |
-| Include Active Lorebook | Sends existing lorebook entries as context |
-| Custom System Prompt | Override the default system instruction entirely |
-
----
-
-## Tips
-
-- If generations keep getting cut off, bump up the token length in the modal
-- If the model ignores the JSON format, try a custom system prompt and be more explicit
-- The **↺** buttons next to each field let you regenerate just that field without redoing the whole entry
-- The **🔍 Preview Full Prompt** button shows exactly what's being sent to the model, useful for debugging
-- On mobile, tap the **✕** button at the top right to close the modal
+- **Highlight-to-draft** — select any text in a chat message and two options
+  appear: **Extract Lore** to draft a brand-new entry, or **Update Lore** to
+  revise one that already exists in your lorebook
+- **LLM-generated entries** — sends your selection and story context to your
+  model, which drafts a structured lore entry (keys, content, the works)
+- **Review modal** — see exactly what Scribe wants to save before it touches
+  your lorebook. Edit it, toss it, or approve it
+- **Saves to World Info** — writes directly to your lorebook, no manual steps
+- **Connection profile support** — choose a dedicated API profile for Scribe
+  to use, completely separate from your main chat connection
+- **Story summary context** — optionally feeds your current story summary
+  (from [qvink's MessageSummarize](https://github.com/qvink/SillyTavern-MessageSummarize)
+  or ST's built-in Summarize) into the generation so the entry actually
+  reflects where the story is, not just what it *was*
 
 ---
 
 ## Requirements
 
-- SillyTavern (latest release branch recommended)
-- Any connected LLM API
+- SillyTavern (Release branch recommended, latest)
+- A configured API connection
+- A lorebook to save entries into
+- *(Optional but recommended)*
+  [qvink's MessageSummarize](https://github.com/qvink/SillyTavern-MessageSummarize)
+  for richer story context on generated entries
 
 ---
 
-## Notes
+## Installation
 
-> Models that follow instructions well produce better results.
-> If you're using a Text Completion profile, make sure it has an API, preset, model, instruct template, and context template configured.
+1. In SillyTavern, open the **Extensions** panel
+2. Go to **Install Extension**
+3. Paste this URL and hit install: https://github.com/RPFiend/SillyTavern-Scribe
+4. Reload SillyTavern
 
 ---
 
-## License
+## Setup
 
-[MIT](LICENSE)
+Once installed, open the **Extensions** panel and find **Scribe** in the list.
+
+- **Connection Profile** — pick the API profile you want Scribe to use for
+generation. If you leave it blank, it falls back to whatever your current
+chat connection is. Any profile without a configured API will be filtered
+out automatically.
+- **Include story summary** — when enabled, Scribe pulls your most recent
+story summary and includes it as context. Keeps your lore entries grounded
+in what's actually happening in the story rather than generating something
+generic. Defaults to on.
+
+---
+
+## How To Use It
+
+### Extracting a new entry
+
+1. Highlight any text in a chat message — a character name, a location, a
+   concept, anything worth logging
+2. The **✍ Extract Lore** button appears near your selection. Click it
+3. Scribe sends the selection and story context to your LLM and drafts a
+   new lore entry
+4. A review modal opens. Read it over, make any edits you want
+5. Hit **Save** and it's in your lorebook
+
+### Updating an existing entry
+
+1. Highlight the name or concept that already has a lorebook entry
+2. Click **✍ Update Lore** from the options that appear
+3. Scribe finds the existing entry, sends it along with the current story
+   context, and drafts a revised version reflecting what's changed
+4. Review the diff, make any tweaks, and hit **Save**
+
+---
+
+## Notes & Tips
+
+- Scribe works best on **specific, named things** — characters, factions,
+locations, items. Highlighting a vague adjective will get you a vague entry
+- If you're using a dedicated connection profile for Scribe, a lightweight
+model works perfectly fine here. You don't need your main RP model for
+drafting lore
+- If you use
+[qvink's MessageSummarize](https://github.com/qvink/SillyTavern-MessageSummarize)
+(and honestly, you should — see my write-up on it
+[here](https://rpfiend.com)), the story summary toggle becomes noticeably
+more useful the deeper you are into a long story
+
+---
+
+## Related
+
+- [LoreProfiles](https://github.com/RPFiend/SillyTavern-LoreProfiles) —
+if Scribe is filling your lorebook, LoreProfiles keeps it organized
+- [Choices!](https://github.com/RPFiend/SillyTavern-Choices) — CYOA story
+suggestions for when you're tapped out on ideas
+- [RPFiend.com](https://rpfiend.com) — guides, extension write-ups, and
+the occasional SillyTavern rabbit hole
+
+---
+
+*Consume. Create. Obsess.*
