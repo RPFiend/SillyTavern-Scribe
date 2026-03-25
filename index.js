@@ -104,6 +104,29 @@ async function sendWithProfile(profileId, prompt) {
     }
 }
 
+function buildSummaryContext() {
+    const ctx = SillyTavern.getContext();
+
+    // Priority 1: qvink MessageSummarize — stored per-message in msg.extra.qvink_memory.memory
+    // Walk backward to find the most recent non-empty, non-lagging summary
+    if (ctx.chat?.length) {
+        for (let i = ctx.chat.length - 1; i >= 0; i--) {
+            const memory = ctx.chat[i]?.extra?.qvink_memory?.memory;
+            if (memory && typeof memory === 'string' && memory.trim()) {
+                return memory.trim();
+            }
+        }
+    }
+
+    // Priority 2: ST built-in Summarize — stored in chatMetadata.memory
+    const builtInSummary = ctx.chatMetadata?.memory;
+    if (builtInSummary && typeof builtInSummary === 'string' && builtInSummary.trim()) {
+        return builtInSummary.trim();
+    }
+
+    return null;
+}
+
 /**
  * Assembles additional context from ST based on saved settings
  * @returns {Promise<string>} - Formatted context string
@@ -112,6 +135,14 @@ async function buildContextSections() {
     const ctx = SillyTavern.getContext();
     const settings = extension_settings['SillyTavern-Scribe'] ?? {};
     const sections = [];
+
+    const includeSummary = extension_settings['SillyTavern-Scribe']?.includeSummary ?? true;
+    if (includeSummary) {
+        const summary = buildSummaryContext();
+        if (summary) {
+            sections.push(`--- Story Summary (so far) ---\n${summary}`);
+        }
+    }
 
     // Recent chat messages
     const messageCount = settings.contextMessages ?? 5;
@@ -1822,6 +1853,37 @@ async function injectSettingsPanel() {
         console.log('[Scribe] System prompt reset to default');
         toastr.success('System prompt reset to default');
     });
+
+    // --- Story Summary Toggle (CHANGE 3 & 4) ---
+    // Add the toggle HTML to the settings panel
+    const summaryToggleHtml = `
+    <div class="scribe-setting-row">
+      <label class="checkbox_label" for="scribe-include-summary">
+        <input type="checkbox" id="scribe-include-summary" />
+        <span>Include story summary in lore context</span>
+      </label>
+      <small style="display:block; color: var(--SmallFontColor); margin-top: 2px;">
+        Uses qvink MessageSummarize or ST built-in Summarize if available.
+      </small>
+    </div>
+    `;
+
+    // Append the summary toggle after the settings panel div
+    $('#scribe_settings .inline-drawer-content .flex-container').append(summaryToggleHtml);
+
+    // Load and save the toggle state
+    const summaryCheckbox = document.getElementById('scribe-include-summary');
+    if (summaryCheckbox) {
+        summaryCheckbox.checked = extension_settings['SillyTavern-Scribe']?.includeSummary ?? true;
+        summaryCheckbox.addEventListener('change', function () {
+            if (!extension_settings['SillyTavern-Scribe']) {
+                extension_settings['SillyTavern-Scribe'] = {};
+            }
+            extension_settings['SillyTavern-Scribe'].includeSummary = this.checked;
+            saveSettingsDebounced();
+            console.log('SillyTavern-Scribe! includeSummary set to', this.checked);
+        });
+    }
 }
 
 // Initialize extension
